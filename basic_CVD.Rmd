@@ -1,0 +1,132 @@
+---
+title: "Basic CVD model in DES simulation"
+author: "Astrid Yu"
+date: `r Sys.Date()`
+output: html_document
+---
+
+```{r setup}
+library(simmer)
+library(tidyverse)
+library(survival)
+library(flexsurv)
+```
+
+
+# Living vs. Dead
+
+mx: 
+qx: Probability of dying between ages x and x + 1
+ax: 
+lx: Number  surviving to  age x
+dx: Number dying between  ages x and x + 1
+Lx: Person-years  lived between  ages x and x + 1
+Tx: Total number of person-years lived above age x
+ex: Expectation of  life at age x
+
+```{r gompertz}
+US_life_female= read.table("fltper_1x1.txt", header = TRUE, skip = 2)
+US_life_male= read.table("mltper_1x1.txt", header = TRUE, skip = 2)
+
+######## female ########
+
+US_life_female_2010 = US_life_female %>%
+  filter(Year == "2010")
+
+# change life table into survival data
+dx_female_2010 = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(US_life_female_2010)-1)) {
+  n_row = US_life_female_2010[age+1,"dx"]
+  dx_female_2010[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_f = data.frame(
+  Age = US_life_female_2010$Age,
+  shape=rep(NA,nrow(US_life_female_2010)),
+  rate=rep(NA,nrow(US_life_female_2010)))
+
+for (age in 0:nrow(US_life_female_2010)-1) {
+  surv.data <- with(dx_female_2010[dx_female_2010$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+  
+  parameters_f$shape[age+1] <- surv.model$coefficients[1]
+  parameters_f$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+
+######## male ########
+
+US_life_male_2010 = US_life_male %>%
+  filter(Year == "2010")
+
+# change life table into survival data
+dx_male_2010 = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(US_life_male_2010)-1)) {
+  n_row = US_life_male_2010[age+1,"dx"]
+  dx_male_2010[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_m = data.frame(
+  Age = US_life_male_2010$Age,
+  shape=rep(NA,nrow(US_life_male_2010)),
+  rate=rep(NA,nrow(US_life_male_2010)))
+
+for (age in 0:nrow(US_life_male_2010)-1) {
+  surv.data <- with(dx_male_2010[dx_male_2010$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+  
+  parameters_m$shape[age+1] <- surv.model$coefficients[1]
+  parameters_m$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+gompertz.parameters = list(Age = 0:(nrow(parameters_f)-2), male.shape = parameters_m[1:(nrow(parameters_m)-1),"shape"], male.rate = parameters_m[1:(nrow(parameters_m)-1),"rate"], female.shape = parameters_f[1:(nrow(parameters_f)-1),"shape"], female.rate = parameters_f[1:(nrow(parameters_f)-1),"rate"])
+
+ageAtDeath <- function(currentAge, gender)
+{
+  currentAge_f <- floor(currentAge) #negative time to secular death issue
+  
+  # Note that the gender values flipped here (1 is now female)
+  if(gender == 1 || gender == 'F' || gender == 'Female' || gender == 'f' || gender == 'female')
+  {
+    shape <- gompertz.parameters$female_shape[currentAge_f+1]
+    rate  <- gompertz.parameters$female_rate[currentAge_f+1]
+  }
+  else
+  {
+    shape <- gompertz.parameters$male_shape[currentAge_f+1]
+    rate  <- gompertz.parameters$male_rate[currentAge_f+1]
+  }
+  
+  min(currentAge + rgompertz(1, shape, rate), 110)
+}
+```
+
+# CVD based on PCE
+
+https://github.com/spgarbet/desdt/tree/main/framingham
+
+```{r Pooled-Cohort}
+source('pcr.R')
+# the probability are percents!!
+
+# simply change from prob to rate than to event
+ProbToRate = function(prob, t){
+  -log(1-prob)/t
+}
+# what this t should be -- 10 years?
+
+rate = ProbToRate(pcr()/100, 10*365.25)
+days = rexp(1,rate)
+```
+
+# DES
+
+```{r des}
+
+```
