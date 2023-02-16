@@ -6,12 +6,12 @@ output: html_document
 ---
 
 ```{r inputs}
-source("life_death_model.Rmd")
 inputs = list(
   ## basic/general from Stroke paper, 2023
   vN = 1000,
   vHorizon = 10,
   CPI2017 = 245.12,
+  CPI2019 = 255.657,
   CPI2020 = 258.811,
   
   ## events from paper 2017
@@ -37,7 +37,8 @@ inputs = list(
 
 )
 ## inflation
-inputs$rInflation = inputs$CPI2020 / inputs$CPI2017
+inputs$rInflation2017 = inputs$CPI2020 / inputs$CPI2017
+inputs$rInflation2019 = inputs$CPI2020 / inputs$CPI2019
 
 ## leave some spaces for PSA
 ```
@@ -816,28 +817,38 @@ basic_CVD_costs = function(inputs, death_after_ASCVD, death_of_ASCVD, death_with
   cost = 0
   ##cHealthcareNonCVD
   if (initial_age < 45) {
-    cost = cost + inputs$cHealthcareNonCVD_18_44 * (min(45, time_in_model + initial_age) - initial_age) + inputs$cHealthcareNonCVD_45_64 * (max(time_in_model + initial_age, 45) - 45)
+    cost = cost + inputs$rInflation2019 * inputs$cHealthcareNonCVD_18_44 * (min(45, time_in_model + initial_age) - initial_age) + inputs$rInflation2019 * inputs$cHealthcareNonCVD_45_64 * (max(time_in_model + initial_age, 45) - 45)
   } else if (initial_age >= 45 & initial_age < 55) {
-    cost = cost + inputs$cHealthcareNonCVD_45_64 * time_in_model
+    cost = cost + inputs$rInflation2019 * inputs$cHealthcareNonCVD_45_64 * time_in_model
   } else if (initial_age >= 55 & initial_age < 65) {
-    cost = cost + inputs$cHealthcareNonCVD_45_64 * (min(65, time_in_model + initial_age) - initial_age) + inputs$cHealthcareNonCVD_65 * (max(time_in_model + initial_age, 65) - 65)
+    cost = cost + inputs$rInflation2019 * inputs$cHealthcareNonCVD_45_64 * (min(65, time_in_model + initial_age) - initial_age) + inputs$rInflation2019 * inputs$cHealthcareNonCVD_65 * (max(time_in_model + initial_age, 65) - 65)
   } else {
-    cost = cost + inputs$cHealthcareNonCVD_65 * time_in_model
+    cost = cost + inputs$rInflation2019 * inputs$cHealthcareNonCVD_65 * time_in_model
   }
   
   # FatalASCVD
   if(!is.na(get_CVD) & !is.na(death_of_ASCVD)) {
-    cost = cost + inputs$cFatalASCVD
+    cost = cost + inputs$rInflation2017 * inputs$cFatalASCVD
   }
   
   # Non-Fatal ASCVD
   if(!is.na(get_CVD) & is.na(death_of_ASCVD)) {
-    cost = cost + inputs$cNonFatalASCVD + inputs$cAnnualFU_afterASCVD * (time_in_model - get_CVD - 1)
+    cost = cost + inputs$rInflation2017 * inputs$cNonFatalASCVD + inputs$rInflation2017 * inputs$cAnnualFU_afterASCVD * (time_in_model - get_CVD - 1)
   }
   return(cost)
 }
 
-trace %>% mutate(cost = basic_CVD_costs(inputs, death_after_ASCVD, death_of_ASCVD, death_without_CVD, get_CVD, time_in_model, initial_age))
+basic_CVD_utilties = function(inputs, get_CVD, time_in_model){
+  if (is.na(get_CVD)) {
+    utility = inputs$uHealthy * time_in_model
+  } else {
+    utility = inputs$uHealthy * get_CVD + inputs$uAfterASCVD * (time_in_model - get_CVD)
+  }
+  return(utility)
+}
+
+trace %>% mutate(cost = basic_CVD_costs(inputs, death_after_ASCVD, death_of_ASCVD, death_without_CVD, get_CVD, time_in_model, initial_age),
+                 utility = basic_CVD_utilties(inputs, get_CVD, time_in_model))
 ```
 
 
