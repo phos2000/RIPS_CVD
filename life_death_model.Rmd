@@ -290,4 +290,34 @@ casted %>%
   geom_histogram()
 
 # Use US life table
+surv.data <- dx_male_2010[dx_male_2010$Age >= 40,]
+
+hist(surv.data$Age, freq=FALSE, main="Census Data from 2010", xlab="Male Deaths Starting at 40", breaks=20)
+curve(dgompertz(x-40, gompertz.parameters$male.shape[41], gompertz.parameters$male.rate[41]) , add=TRUE, col='red')
+
+surv.data <- dx_male_2010[dx_male_2010$Age >= 90,]
+
+hist(surv.data$Age, freq=FALSE, main="Census Data from 2010", xlab="Male Deaths Starting at 90", breaks=20)
+curve(dgompertz(x-90, gompertz.parameters$male.shape[91], gompertz.parameters$male.rate[91]) , add=TRUE, col='red')
+
+
+# reset initial patient
+
+initialize_patient <- function(traj, inputs)
+{
+        traj %>%
+                seize("time_in_model")       %>%
+                
+                # NHANES version
+                set_attribute("aGender",    function() 1) %>% 
+                set_attribute("aAge",       function() 40) %>% 
+                
+                set_attribute("aAgeInitial",function() get_attribute(env, "aAge"))
+}
+surv.data <- casted
+
+hist(surv.data$aAge, freq=FALSE, main="DES results, 1000 men starting from 40", xlab="Male Deaths Starting at 40", breaks=20)
+curve(dgompertz(x-40, gompertz.parameters$male.shape[41], gompertz.parameters$male.rate[41]) , add=TRUE, col='red')
+
+
 ```
