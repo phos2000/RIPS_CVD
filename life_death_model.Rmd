@@ -1,7 +1,7 @@
 ---
 title: "Basic Life-Death model in DES simulation"
 author: "Astrid Yu"
-date: `r Sys.Date()`
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -105,6 +105,104 @@ ageAtDeath <- function(currentAge, gender)
   
   min(currentAge + rgompertz(1, shape, rate), 110)
 }
+```
+
+```{r hazard-gome}
+life_female_afterASCVD = data.frame(Year = rep(2010,111), 
+                                    Age = 0:110, 
+                                    qx = qx = sapply(sapply(US_life_female_2010$qx, ProbToRate, t = 1) * inputs$mortalityAfterASCVD, RateToProb, t = 1),
+                                    lx = rep(0,111), 
+                                    dx = rep(NA,111))
+life_female_afterASCVD$lx[1] = 100000
+for (i in 1:nrow(life_female_afterASCVD)) {
+  if (life_female_afterASCVD[i, "lx"] > 0) {
+    life_female_afterASCVD[i, "dx"] = round(life_female_afterASCVD[i, "qx"] * life_female_afterASCVD[i, "lx"])
+    life_female_afterASCVD[i+1, "lx"] = life_female_afterASCVD[i, "lx"] - life_female_afterASCVD[i, "dx"]
+  }
+}
+life_female_afterASCVD  = life_female_afterASCVD %>% filter(!is.na(dx))
+
+dx_female_afterASCVD = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(life_female_afterASCVD)-1)) {
+  n_row = life_female_afterASCVD[age+1,"dx"]
+  dx_female_afterASCVD[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_f = data.frame(
+  Age = life_female_afterASCVD$Age,
+  shape=rep(NA,nrow(life_female_afterASCVD)),
+  rate=rep(NA,nrow(life_female_afterASCVD)))
+
+for (age in 0:nrow(life_female_afterASCVD)-1) {
+  surv.data <- with(dx_female_afterASCVD[dx_female_afterASCVD$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+  
+  parameters_f$shape[age+1] <- surv.model$coefficients[1]
+  parameters_f$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+#### male ####
+
+
+life_male_afterASCVD = data.frame(Year = rep(2010,111), 
+                                  Age = 0:110, 
+                                  qx = sapply(sapply(US_life_male_2010$qx, ProbToRate, t = 1) * inputs$mortalityAfterASCVD, RateToProb, t = 1),
+                                  lx = rep(0,111), dx = rep(NA,111))
+life_male_afterASCVD$lx[1] = 100000
+for (i in 1:nrow(life_male_afterASCVD)) {
+  if (life_male_afterASCVD[i, "lx"] > 0) {
+    life_male_afterASCVD[i, "dx"] = round(life_male_afterASCVD[i, "qx"] * life_male_afterASCVD[i, "lx"])
+    life_male_afterASCVD[i+1, "lx"] = life_male_afterASCVD[i, "lx"] - life_male_afterASCVD[i, "dx"]
+  }
+}
+life_male_afterASCVD  = life_male_afterASCVD %>% filter(!is.na(dx))
+
+dx_male_afterASCVD = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(life_male_afterASCVD)-1)) {
+  n_row = life_male_afterASCVD[age+1,"dx"]
+  dx_male_afterASCVD[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_m = data.frame(
+  Age = life_male_afterASCVD$Age,
+  shape=rep(NA,nrow(life_male_afterASCVD)),
+  rate=rep(NA,nrow(life_male_afterASCVD)))
+
+for (age in 0:nrow(life_male_afterASCVD)-1) {
+  surv.data <- with(dx_male_afterASCVD[dx_male_afterASCVD$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+  
+  parameters_m$shape[age+1] <- surv.model$coefficients[1]
+  parameters_m$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+gompertz.afterASCVD.parameters = list(Age = 0:(nrow(parameters_f)-2), male.shape = parameters_m[1:(nrow(parameters_m)-1),"shape"], male.rate = parameters_m[1:(nrow(parameters_m)-1),"rate"], female.shape = parameters_f[1:(nrow(parameters_f)-1),"shape"], female.rate = parameters_f[1:(nrow(parameters_f)-1),"rate"])
+
+ageAtDeath_afterASCVD <- function(currentAge, gender)
+{
+  currentAge_f <- floor(currentAge) #negative time to secular death issue
+  
+  # Male 1 FEMALE 2
+  if(gender == 2)
+  {
+    shape <- gompertz.afterASCVD.parameters$female.shape[currentAge_f+1]
+    rate  <- gompertz.afterASCVD.parameters$female.rate[currentAge_f+1]
+  }
+  else
+  {
+    shape <- gompertz.afterASCVD.parameters$male.shape[currentAge_f+1]
+    rate  <- gompertz.afterASCVD.parameters$male.rate[currentAge_f+1]
+  }
+  
+  min(currentAge + rgompertz(1, shape, rate), 105)
+}
+save(gompertz.parameters, gompertz.afterASCVD.parameters, file = "./life table/gompertz.RData")
 ```
 
 # NHANES dataset preparation
@@ -319,5 +417,210 @@ surv.data <- casted
 hist(surv.data$aAge, freq=FALSE, main="DES results, 1000 men starting from 40", xlab="Male Deaths Starting at 40", breaks=20)
 curve(dgompertz(x-40, gompertz.parameters$male.shape[41], gompertz.parameters$male.rate[41]) , add=TRUE, col='red')
 
+
+```
+
+# No longer used
+
+```{r events-no-longer-used}
+counters = c("get_CVD", "death_without_CVD", "death_with_CVD", "time_in_model")
+
+terminate <- function(traj, inputs)
+{
+  traj %>%
+  branch(function() 1,
+         continue=FALSE,
+         trajectory()               %>%
+           release("time_in_model") %>%
+           timeout(0)
+        )
+}
+
+years_till_death_without_CVD <- function(inputs)
+{
+  age       <- get_attribute(env, 'aAge')
+  gender    <- get_attribute(env, 'aGender')
+  
+  deathAge = ageAtDeath(age, gender)
+  
+  return(deathAge - age)
+}
+
+event_death_without_CVD <- function(traj, inputs)
+{
+  cat("event_Death() ", now(env), "\n")
+
+  traj %>% 
+    set_attribute("aAgeDeathNonCVD", function() get_attribute(env,"aDeathWithoutCVD") + get_attribute(env,"aAgeInitial")) %>%
+    branch(
+    function() 1,
+    continue=c(TRUE),
+    trajectory("Death without CVD") %>%
+      mark("death_without_CVD") %>%
+      terminate(inputs)
+  )
+}
+
+years_till_get_CVD <- function(inputs)
+{
+  gender = ifelse(get_attribute(env, "aGender") == 1, "M", "F")
+  race_pcr = race_convert(get_attribute(env, "aRace")) 
+  
+  prob = pcr(gender,
+             get_attribute(env,"aAgeInitial") + now(env),
+             race_pcr,
+             get_attribute(env, "aTotChol"),
+             get_attribute(env, "aHdlChol"),
+             get_attribute(env, "aSystolicBp"),
+             (get_attribute(env, "aBpTreatment") == 1),
+             (get_attribute(env, "aSmoker") %in% c(1,2)),
+             (get_attribute(env, "aDiabetic") == 1),
+             get_attribute(env, "aPrsZ")
+             )/100
+  
+  # 10-year probability to 1-year rate
+  years = rexp(1,ProbToRate(prob, 10))
+  
+  return(years)
+}
+
+event_get_CVD = function(traj, inputs) {
+  cat("event_get_CVD() ", now(env), "\n")
+
+  traj %>%
+    set_attribute("aAgeCVD", function() get_attribute(env,"aAgeInitial") + get_attribute(env, "aGetCVD")) %>%
+    branch(
+    function() 1,
+    continue=c(TRUE),
+    trajectory("Get CVD") %>%
+      mark("get_CVD")) %>% 
+    timeout(function() years_till_death_with_CVD(inputs)) %>%
+    event_death_with_CVD(inputs)
+}
+
+# years_till_acute_CVD_death = function(inputs) {
+#   
+#     
+#   
+#   return(ifelse(happen == 1, 1, 500))
+#   }
+# 
+# event_death_acute_CVD = function(traj, inputs) {
+#   traj %>% 
+#     set_attribute("aAgeDeath", function() 1 + get_attribute(env,"aAgeCVD")) %>%
+#     branch(
+#     function() 1,
+#     continue=c(TRUE),
+#     trajectory("Death Acute CVD") %>%
+#       mark("death Acute CVD") %>%
+#       terminate(inputs)
+#     )
+#   }
+
+# years_till_death_with_CVD <- function(inputs)
+# {
+#   ageCVD    <- get_attribute(env, 'aAgeCVD')
+#   gender    <- get_attribute(env, 'aGender')
+#   
+#   # whether ASCVD died in first year happened
+#   happen = 0
+#   if (gender == 1) {
+#     ## men
+#     if (ageCVD < 65) {
+#       happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_male_young, inputs$mortalityFirstYearASCVD_male_young))
+#     } else {
+#       happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_male_old, inputs$mortalityFirstYearASCVD_male_old))
+#       }
+#     } else {
+#     ## women
+#       if (ageCVD < 65) {
+#         happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_female_young, inputs$mortalityFirstYearASCVD_female_young))
+#       } else {
+#         happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_female_old, inputs$mortalityFirstYearASCVD_female_old))
+#       }
+#     }
+#   
+#   deathAge = deathAge = ageAtDeath_afterASCVD(
+#     ifelse(ageCVD+1>length(gompertz.afterASCVD.parameters$male.shape)-1, length(gompertz.afterASCVD.parameters$male.shape)-1, ageCVD), 
+#   gender)
+#   
+#   return(ifelse(happen == 1, get_attribute(env, "aGetCVD") + 1, get_attribute(env, "aGetCVD") + deathAge - ageCVD))
+# }
+
+years_till_death_with_CVD <- function(inputs)
+{
+  ageCVD    <- get_attribute(env, 'aGetCVD') + get_attribute(env, "aAgeInitial")
+  gender    <- get_attribute(env, 'aGender')
+  
+  ## getCVD maybe sth really big.
+  
+  age_max = ifelse(gender == 1, max(parameters_m_hr$Age), max(parameters_f_hr$Age))
+  
+  if (ageCVD >= age_max - 1) {
+    # not able to use ageAtDeath(ageCVD+1, gender)
+    years = get_attribute(env, 'aGetCVD')
+  } else {
+    ## ageCVD under the age limitation -- able to use gomepertz
+    # whether ASCVD died in first year happened
+    happen = 0
+    if (gender == 1) {
+      ## men
+      if (ageCVD < 65) {
+        happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_male_young, inputs$mortalityFirstYearASCVD_male_young))
+        } else {
+          happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_male_old, inputs$mortalityFirstYearASCVD_male_old))
+          }
+      } else {
+        ## women
+        if (ageCVD < 65) {
+          happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_female_young, inputs$mortalityFirstYearASCVD_female_young))
+          } else {
+            happen = sample(0:1, 1, prob = c(1-inputs$mortalityFirstYearASCVD_female_old, inputs$mortalityFirstYearASCVD_female_old))
+          }
+        }
+
+  deathAge = ageAtDeath_afterASCVD(ageCVD + 1, gender)
+  
+  # GetCVD + ageInitial maybe a impossible number
+  years = ifelse(happen == 1, get_attribute(env, "aGetCVD") + 1, deathAge - get_attribute(env, "aAgeInitial"))
+  }
+  
+  return(years)
+}
+
+event_death_with_CVD = function(traj, inputs) {
+  traj %>% 
+    set_attribute("aAgeDeathCVD", function() get_attribute(env, "aAgeInitial")+now(env)) %>%
+    branch(
+    function() 1,
+    continue=c(TRUE),
+    trajectory("Death With CVD") %>%
+      mark("death_with_CVD") %>%
+      terminate(inputs)
+    )
+}
+
+event_registry <- list(
+        list(name          = "get CVD",
+             attr          = "aGetCVD",
+             time_to_event = years_till_get_CVD,
+             func          = event_get_CVD,
+             reactive      = FALSE),
+        list(name          = "Death without CVD",
+             attr          = "aDeathWithoutCVD",
+             time_to_event = years_till_death_without_CVD,
+             func          = event_death_without_CVD,
+             reactive      = FALSE),
+        # list(name          = "Death with CVD",
+        #      attr          = "aDeathWithCVD",
+        #      time_to_event = years_till_death_with_CVD,
+        #      func          = event_death_with_CVD,
+        #      reactive      = FALSE),
+        list(name          = "Halt at time horizon",
+             attr          = "aTerminate",
+             time_to_event = function(inputs) inputs$vHorizon,
+             func          = terminate,
+             reactive      = FALSE)
+)
 
 ```
