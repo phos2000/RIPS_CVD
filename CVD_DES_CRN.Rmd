@@ -15,6 +15,8 @@ load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","
 install.lib<-load.lib[!load.lib %in% installed.packages()]
 for(lib in install.lib) install.packages(lib,dependencies=TRUE)
 sapply(load.lib,require,character=TRUE)
+library(simmer)
+select <- dplyr::select
 
 options("scipen"=1000, "digits"=4)
 ```
@@ -24,12 +26,13 @@ options("scipen"=1000, "digits"=4)
 Spahillari, et al. (2020)
 
 ```{r inputs}
-inputs = list(
+params = list(
   ## basic/general from Stroke paper, 2023
   strategy = 0, # or 1
-  vN = 100000,
+  vN = 1000,
   vHorizon = 10,
   discount_rate = 0.03,
+  wtp = 100000,
   CPI2017 = 245.12,
   CPI2019 = 255.657,
   CPI2020 = 258.811,
@@ -58,22 +61,31 @@ inputs = list(
   mortalityFirstYearASCVD_male_old_dist = "beta",
   
   pMildStatinAdverse = 0.047,
+  pMildStatinAdverse_low = 0.047*0.85, 
+  pMildStatinAdverse_upp = 0.047*1.15,
   pMildStatinAdverse_dist = "beta",
   
   pMajorStatinAdverse = 0.006/100,
+  pMajorStatinAdverse_low = 0.006/100*0.85,
+  pMajorStatinAdverse_upp = 0.006/100*1.15,
   pMajorStatinAdverse_dist = "beta",
   
   pMajorStatinAdverseBeingFatal = 0.09/100,
+  pMajorStatinAdverseBeingFatal_low = 0.09/100*0.85,
+  pMajorStatinAdverseBeingFatal_upp = 0.09/100*1.15,
   pMajorStatinAdverseBeingFatal_dist = "beta",
 
   ## utility
   uHealthy = 1,
   uAfterASCVD = 0.773,
+  uAfterASCVD_low = 0.773*0.85,
+  uAfterASCVD_upp = 0.773*1.15,
   uAfterASCVD_dist = "beta",
   
   uHealthyStatin = 0.996,
   uHealthyStatin_low = 0.991,
   uHealthyStatin_upp = 1.000,
+  uHealthyStatin_dist = "beta",
   
   uPenaltyMildStatinAdverse = -0.0055,
   uPenaltyMajorStatinAdverse = -0.0383,
@@ -81,18 +93,23 @@ inputs = list(
   uDeath = 0,
   
   ## cost(2017)
-  cAnnualFU_afterASCVD= 3917,
+  cAnnualFU_afterASCVD = 3917,
   cAnnualFU_afterASCVD_low = 2611,
   cAnnualFU_afterASCVD_upp = 6528,
   cAnnualFU_afterASCVD_dist = "gamma",
   
   cNonFatalASCVD = 49348,
+  cNonFatalASCVD_low = 49348*0.85,
+  cNonFatalASCVD_upp = 49348*1.15,
   cNonFatalASCVD_dist = "gamma",
   
   cFatalASCVD = 16760,
+  cFatalASCVD_low = 16760*0.85,
+  cFatalASCVD_upp = 16760*1.15,
   cFatalASCVD_dist = "gamma",
   
   cAnnualStatin = 84,
+  
   cMildStatinAdverse = 215,
   cMildStatinAdverse_low = 196,
   cMildStatinAdverse_upp = 326,
@@ -105,15 +122,15 @@ inputs = list(
   
   annual_discount_rate = 0.03,
   
-  ### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups, United States, 1996 to 2020. Medical Expenditure Panel Survey.(2019)
-  cHealthcareNonCVD_18_44 = 3891,
-  cHealthcareNonCVD_45_64 = 8494,
-  cHealthcareNonCVD_65 = 13016
+  ### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups, United States, 1996 to 2020. Medical Expenditure Panel Survey.(2020)
+  cHealthcareNonCVD_18_44 = 3901,
+  cHealthcareNonCVD_45_64 = 8693,
+  cHealthcareNonCVD_65 = 12441
 
 )
 ## inflation
-inputs$rInflation2017 = inputs$CPI2020 / inputs$CPI2017
-inputs$rInflation2019 = inputs$CPI2020 / inputs$CPI2019
+params$rInflation2017 = params$CPI2020 / params$CPI2017
+params$rInflation2019 = params$CPI2020 / params$CPI2019
 
 ## leave some spaces for PSA
 ```
@@ -132,13 +149,13 @@ RateToProb = function(rate, t){
 # rate = ProbToRate(pcr()/100)
 # days = rexp(1,rate)
 
-inputs$cont_discount_rate <- -log(1- inputs$annual_discount_rate) # Yearly Time Scale
-discounted <- function(undiscounted, start_year, end_year, rate = inputs$cont_discount_rate)
+params$cont_discount_rate <- -log(1- params$annual_discount_rate) # Yearly Time Scale
+discounted <- function(undiscounted, start_year, end_year, rate = params$cont_discount_rate)
 {
   undiscounted/ (exp(-rate*(end_year-start_year)))
 }
 
-discount <- function(value, A, ar=inputs$annual_discount_rate) value / (1+ar)^A
+discount <- function(value, A, ar=params$annual_discount_rate) value / (1+ar)^A
 ```
 
 ## Random Number Generator
@@ -146,7 +163,7 @@ discount <- function(value, A, ar=inputs$annual_discount_rate) value / (1+ar)^A
 attributes and events for random:
 
 | location                     | attributes/events    | without CRN                                                                                  | with CRN                                                                                                                                    |
-|-----------------|-----------------|-----------------|----------------------|
+|-----------------|-----------------|-----------------|--------------------|
 | initialize_patient           | **nhanesNo**         | sample(1:nrow(nhanes_pop), 1, prob=1/nhanes_pop\$WTMEC2YR))                                  | nhanes_pop\$cum_weight = cumsum(nhanes_pop\$WTMEC2YR / sum(nhanes_pop\$WTMEC2YR))                                                           |
 | years_till_death_without_CVD | **aDeathWithoutCVD** | rgompertz(1, shape, rate)                                                                    | qgompertz(inputs\$randomNums[(get_attribute(env,"patientID"))\*length(rCRN) + rCRN["rDeathWithoutCVD"]], shape, rate)                       |
 | years_till_get_CVD           | **aGetCVD**          | rexp(1,ProbToRate(prob, 10))                                                                 | qexp(inputs\$randomNums[(get_attribute(env,"patientID"))\*length(rCRN) + rCRN["rGetCVD"]], ProbToRate(prob, 10))                            |
@@ -162,8 +179,10 @@ set.seed(114514)
 rCRN = 1:8
 names(rCRN) = c("nhanesNo", "rDeathWithoutCVD", "rGetCVD", "rDeathOfASCVD", "rDeathAfterASCVD", "rStatinsMildAdverse", "rStatinsMajorAdverse", "rDeathOfStatinsAdverse")
 
-inputs$nRN = inputs$vN * length(rCRN)
-inputs$randomNums = runif(inputs$nRN)
+params_CRN = params
+
+params_CRN$nRN = params_CRN$vN * length(rCRN)
+params_CRN$randomNums = runif(params_CRN$nRN)
 ```
 
 ## Gompertz Model
@@ -238,13 +257,10 @@ ageAtDeath <- function(currentAge, gender, inputs, patientID)
   currentAge_f <- floor(currentAge) #negative time to secular death issue
   
   # Male 1 FEMALE 2
-  if(gender == 2)
-  {
+  if(gender == 2){
     shape <- parameters_f$shape[currentAge_f+1]
     rate  <- parameters_f$rate[currentAge_f+1]
-  }
-  else
-  {
+  } else {
     shape <- parameters_m$shape[currentAge_f+1]
     rate  <- parameters_m$rate[currentAge_f+1]
   }
@@ -336,7 +352,7 @@ ageAtDeath_afterASCVD = function(currentAge, gender, inputs, patientID)
   {
     shape <- parameters_f_hr$shape[currentAge_f+1]
     rate  <- parameters_f_hr$rate[currentAge_f+1]
-    age = min(currentAge + rgompertz(1, shape, rate), max(parameters_f_hr$Age))
+    age = min(currentAge + ifelse(is.null(inputs$randomNums), rgompertz(1, shape, rate), qgompertz(inputs$randomNums[(patientID-1)*length(rCRN) + rCRN["rDeathAfterASCVD"]], shape, rate)), max(parameters_f_hr$Age))
   }
   else
   {
@@ -832,7 +848,6 @@ event_registry <- list(
 Two versions of event_registry --
 
 ```{r run}
-library(simmer)
 source("DES.R")
 
 env = simmer("CVD")
@@ -882,7 +897,7 @@ Solve the repeat events by requiring the value to be NA previously:
 -   Major Adverse Events
 
 ```{r results}
-detach("package:simmer", unload=TRUE)
+# detach("package:simmer", unload=TRUE)
 
 # attributes
 # as the ageCVD might be over 79, ageCVDagain is not correct. 
@@ -915,30 +930,35 @@ casted %>% filter(aDeathOfStatinsAdverse == min(aGetCVD, aDeathWithoutCVD, aDeat
 
 ## 1. never get CVD, never die before horizon. 
 casted %>% filter(is.na(AgeCVD) & is.na(AgeDeathNonCVD)) %>%
+  head(10) %>%
   kable(caption = "1. never get CVD, never die before horizon.") %>%
   kable_styling() %>%
   scroll_box(height = "400px")
 
 ## 2. never get CVD, die of background mortality before horizon
 casted %>% filter(is.na(AgeCVD) & !is.na(AgeDeathNonCVD)) %>%
+  head(10) %>%
   kable(caption = "2. never get CVD, die of background mortality before horizon") %>%
   kable_styling() %>%
   scroll_box(height = "400px")
 
 ## 3. get CVD, survive till horizon
 casted %>% filter(!is.na(AgeCVD) & is.na(AgeDeathCVD)) %>%
+  head(10) %>%
   kable(caption = "3. get CVD, survive till horizon") %>%
   kable_styling() %>%
   scroll_box(height = "400px")
 
 ## 4. get CVD, die of first-year ASCVD
 casted %>% filter(!is.na(AgeCVD) & !is.na(AgeDeathCVD) & aDeathOfASCVD == 0.5 + aGetCVD) %>%
+  head(10) %>%
   kable(caption = "4. get CVD, die of first-year ASCVD") %>%
   kable_styling() %>%
   scroll_box(height = "400px")
 
 ## 5. get CVD, die after first-year ASCVD event
 casted %>% filter(!is.na(AgeCVD) & !is.na(AgeDeathCVD) & is.finite(aDeathAfterASCVD)) %>%
+  head(10) %>%
   kable(caption = "5. get CVD, die after first-year ASCVD event") %>%
   kable_styling() %>%
   scroll_box(height = "400px")
@@ -1019,7 +1039,7 @@ if (is.null(trace$statins_major_adverse_event)) {trace$statins_major_adverse_eve
 
 ## Statins CEA
 
-```{r cost-utility}
+```{r cost-utility-func}
 basic_CVD_costs = function(inputs, death_after_ASCVD, death_of_ASCVD, death_without_CVD, get_CVD, time_in_model, initial_age) {
   cost = 0
   ##cHealthcareNonCVD
@@ -1079,7 +1099,9 @@ adjusted_statins_utilities = function(inputs, statins_use, statins_mild_adverse_
     } else {return(inputs$uHealthy * get_CVD + inputs$uAfterASCVD * (time_in_model - get_CVD))}
   }
 }
+```
 
+```{r cea}
 patientWcea = trace %>% 
   rowwise() %>%
   mutate(
@@ -1156,4 +1178,187 @@ work-on
 # trace %>%
 #   mutate(cHealthcareNonCVD = cHealthcareNonCVD(inputs, time_in_model, initial_age))
 
+```
+
+# Common Random Number Check
+
+random draws
+
+```{r draws}
+source("random_draws_for_CVD_PSAs.R")
+
+RIPS_CVD_run = function(inputs){
+  results <- NULL
+  attributes <- NULL
+  #outputs <- list()
+
+  for (strategy in 0:1){
+    inputs$strategy = strategy
+  
+    run <- exec.simulation(inputs)
+    run$strategy <- strategy
+  
+    at <- arrange(get_mon_attributes(env),name,key,time) #obtain attributes data
+    at$strategy <- strategy
+  
+    if(is.null(results)) { results <- run } else  {results <- rbind(results, run)}
+    if(is.null(attributes)) { attributes <- at } else  {attributes <- rbind(attributes, at)}
+    rm(run)
+    rm(at)
+  }
+  
+  repeatSets = attributes %>% filter((key == "aGetCVD" | key == "aStatinsMildAdverse" | key == "aStatinsMajorAdverse") & is.infinite(value))
+
+  casted = setdiff(attributes, repeatSets) %>% select(-replication, -time) %>% spread(key, value)
+  
+  trace = results %>% select(-start_time, -activity_time, -replication) %>% spread(resource, end_time) %>% 
+  left_join(casted %>% select(name, strategy, statins_use = aUseStatins, initial_age = AgeInitial), by = c("name", "strategy"))
+
+  if (is.null(trace$statins_major_adverse_event)) {trace$statins_major_adverse_event = NA}
+  
+  patientWcea = trace %>% 
+    rowwise() %>%
+    mutate(
+      cost = basic_CVD_costs(inputs, death_after_ASCVD, death_of_ASCVD, death_without_CVD, get_CVD, time_in_model, initial_age),
+  #+ adjustment_statins_costs(inputs, statins_use, statins_mild_adverse_event, statins_major_adverse_event, get_CVD, time_in_model),
+      utility = adjusted_statins_utilities(inputs, statins_use, statins_mild_adverse_event, statins_major_adverse_event, get_CVD, time_in_model))
+
+  strategyWcea = patientWcea %>% 
+    group_by(strategy) %>%
+      summarize(
+        time_in_model = mean(time_in_model),
+        cost = mean(cost), 
+        QALY = mean(utility)) %>%
+    mutate(strategy = ifelse(strategy == 1, "Statins(2013 ACC/AHA)", "Status Quo"))
+
+  df_cea = calculate_icers(cost = strategyWcea$cost,
+                         effect = strategyWcea$QALY,
+                         strategies = strategyWcea$strategy)
+
+#   outputs$results = results
+#   outputs$attributes = attributes
+#   outputs$df_cea = df_cea
+  return(df_cea)
+} 
+```
+
+```{r test}
+o1 = RIPS_CVD_run(params_CRN)
+o2 = RIPS_CVD_run(params_CRN)
+
+repeatSets1 = o1$attributes %>% filter((key == "aGetCVD" | key == "aStatinsMildAdverse" | key == "aStatinsMajorAdverse") & is.infinite(value))
+
+  casted1 = setdiff(o1$attributes, repeatSets1) %>% select(-replication, -time) %>% spread(key, value)
+  
+  trace1 = o1$results %>% select(-start_time, -activity_time, -replication) %>% spread(resource, end_time) %>% 
+  left_join(casted1 %>% select(name, strategy, statins_use = aUseStatins, initial_age = AgeInitial), by = c("name", "strategy"))
+
+  if (is.null(trace1$statins_major_adverse_event)) {trace1$statins_major_adverse_event = NA}
+
+repeatSets2 = o2$attributes %>% filter((key == "aGetCVD" | key == "aStatinsMildAdverse" | key == "aStatinsMajorAdverse") & is.infinite(value))
+
+  casted2 = setdiff(o2$attributes, repeatSets1) %>% select(-replication, -time) %>% spread(key, value)
+  
+  trace2 = o2$results %>% select(-start_time, -activity_time, -replication) %>% spread(resource, end_time) %>% 
+  left_join(casted2 %>% select(name, strategy, statins_use = aUseStatins, initial_age = AgeInitial), by = c("name", "strategy"))
+
+  if (is.null(trace2$statins_major_adverse_event)) {trace2$statins_major_adverse_event = NA}
+  
+which(trace1 != trace2, arr.ind = TRUE)
+  
+  patientWcea = trace %>% 
+    rowwise() %>%
+    mutate(
+      cost = basic_CVD_costs(inputs, death_after_ASCVD, death_of_ASCVD, death_without_CVD, get_CVD, time_in_model, initial_age),
+  #+ adjustment_statins_costs(inputs, statins_use, statins_mild_adverse_event, statins_major_adverse_event, get_CVD, time_in_model),
+      utility = adjusted_statins_utilities(inputs, statins_use, statins_mild_adverse_event, statins_major_adverse_event, get_CVD, time_in_model))
+
+  strategyWcea = patientWcea %>% 
+    group_by(strategy) %>%
+      summarize(
+        time_in_model = mean(time_in_model),
+        cost = mean(cost), 
+        QALY = mean(utility)) %>%
+    mutate(strategy = ifelse(strategy == 1, "Statins(2013 ACC/AHA)", "Status Quo"))
+
+
+```
+
+```{r dsa-way}
+
+```
+
+## Without CRN
+
+```{r woCRN}
+params_PSA = params
+rrStatinsASCVD_1000draws = randomDraw("rrStatinsASCVD",params_PSA,1000)
+
+results_woCRN = list()
+results_woCRN$statins = data.frame(NULL)
+results_woCRN$quo = data.frame(NULL)
+
+for (i in 1:1000){
+  print(paste0(i))
+  params_PSA$rrStatinsASCVD = rrStatinsASCVD_1000draws[i]
+  
+  time_start <- Sys.time()
+  result = RIPS_CVD_run(params_PSA)
+  time_end <- Sys.time()
+  
+  result = result %>%
+    mutate(NHB = Effect*params_PSA$wtp - Cost,
+           rrStatinsASCVD = rrStatinsASCVD_100draws[i],
+           time = time_end - time_start)
+  
+    if(is.null(results_woCRN$statins)){
+      results_woCRN$statins <- result[result$Strategy == "Statins(2013 ACC/AHA)",]
+    } else {results_woCRN$statins <- rbind.data.frame(results_woCRN$statins, result[result$Strategy == "Statins(2013 ACC/AHA)",])}
+  
+  if(is.null(results_woCRN$quo)){
+      results_woCRN$quo <- result[result$Strategy == "Status Quo",]
+  } else {results_woCRN$quo <- rbind.data.frame(results_woCRN$quo, result[result$Strategy == "Status Quo",])}
+  
+}
+
+results_woCRN$statins %>%
+  ggplot(aes(x = rrStatinsASCVD, y = Effect)) +
+  geom_line()
+```
+
+## With CRN
+
+```{r wCRN}
+params_PSA = params_CRN
+rrStatinsASCVD_1000draws = randomDraw("rrStatinsASCVD",params_PSA,1000)
+
+results_wCRN = list()
+results_wCRN$statins = data.frame(NULL)
+results_wCRN$quo = data.frame(NULL)
+
+for (i in 1:1000){
+  print(paste0(i))
+  params_PSA$rrStatinsASCVD = rrStatinsASCVD_100draws[i]
+  
+  time_start = Sys.time()
+  result = RIPS_CVD_run(params_PSA)
+  time_end = Sys.time()
+  result = result %>%
+    mutate(NHB = Effect*params_PSA$wtp - Cost,
+           rrStatinsASCVD = rrStatinsASCVD_100draws[i],
+           time = time_end - time_start)
+  
+    if(is.null(results_wCRN$statins)){
+      results_wCRN$statins <- result[result$Strategy == "Statins(2013 ACC/AHA)",]
+    } else {results_wCRN$statins <- rbind.data.frame(results_wCRN$statins, result[result$Strategy == "Statins(2013 ACC/AHA)",])}
+  
+  if(is.null(results_wCRN$quo)){
+      results_wCRN$quo <- result[result$Strategy == "Status Quo",]
+  } else {results_wCRN$quo <- rbind.data.frame(results_wCRN$quo, result[result$Strategy == "Status Quo",])}
+  
+}
+
+results_wCRN$statins %>%
+  ggplot(aes(x = rrStatinsASCVD, y = Effect)) +
+  geom_line()
 ```

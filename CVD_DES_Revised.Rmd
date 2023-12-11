@@ -1,0 +1,520 @@
+---
+title: "Common Random Number in DES simulation -- based on CVD model"
+author: "Astrid Yu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+---
+
+# Preparation
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel")
+install.lib<-load.lib[!load.lib %in% installed.packages()]
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+sapply(load.lib,require,character=TRUE)
+library(simmer)
+select <- dplyr::select
+
+options("scipen"=1000, "digits"=4)
+```
+
+## Inputs
+
+Spahillari, et al. (2020)
+
+```{r inputs}
+params = list(
+  ## basic/general from Stroke paper, 2023
+  strategy = 0, # or 1
+  vN = 1000,
+  vHorizon = 10,
+  discount_rate = 0.03,
+  wtp = 100000,
+  CPI2017 = 245.12,
+  CPI2019 = 255.657,
+  CPI2020 = 258.811,
+  
+  ## events from paper 2017
+  rrStatinsASCVD = 0.79,
+  rrStatinsASCVD_low = 0.77,
+  rrStatinsASCVD_upp = 0.81,
+  rrStatinsASCVD_dist = "lnorm",
+  
+  hrAfterASCVD = 1.9,
+  hrAfterASCVD_low = 1.60,
+  hrAfterASCVD_upp = 2.40, 
+  hrAfterASCVD_dist = "lnorm", # log-normal
+  
+  mortalityFirstYearASCVD_female_young = 0.09,
+  mortalityFirstYearASCVD_female_young_dist = "beta",
+  
+  mortalityFirstYearASCVD_female_old = 0.3,
+  mortalityFirstYearASCVD_female_old_dist = "beta",
+  
+  mortalityFirstYearASCVD_male_young = 0.14,
+  mortalityFirstYearASCVD_male_young_dist = "beta",
+  
+  mortalityFirstYearASCVD_male_old = 0.25,
+  mortalityFirstYearASCVD_male_old_dist = "beta",
+  
+  pMildStatinAdverse = 0.047,
+  pMildStatinAdverse_low = 0.047*0.85, 
+  pMildStatinAdverse_upp = 0.047*1.15,
+  pMildStatinAdverse_dist = "beta",
+  
+  pMajorStatinAdverse = 0.006/100,
+  pMajorStatinAdverse_low = 0.006/100*0.85,
+  pMajorStatinAdverse_upp = 0.006/100*1.15,
+  pMajorStatinAdverse_dist = "beta",
+  
+  pMajorStatinAdverseBeingFatal = 0.09/100,
+  pMajorStatinAdverseBeingFatal_low = 0.09/100*0.85,
+  pMajorStatinAdverseBeingFatal_upp = 0.09/100*1.15,
+  pMajorStatinAdverseBeingFatal_dist = "beta",
+
+  ## utility
+  uHealthy = 1,
+  uAfterASCVD = 0.773,
+  uAfterASCVD_low = 0.773*0.85,
+  uAfterASCVD_upp = 0.773*1.15,
+  uAfterASCVD_dist = "beta",
+  
+  uHealthyStatin = 0.996,
+  uHealthyStatin_low = 0.991,
+  uHealthyStatin_upp = 1.000,
+  uHealthyStatin_dist = "beta",
+  
+  uPenaltyMildStatinAdverse = -0.0055,
+  uPenaltyMajorStatinAdverse = -0.0383,
+  
+  uDeath = 0,
+  
+  ## cost(2017)
+  cAnnualFU_afterASCVD = 3917,
+  cAnnualFU_afterASCVD_low = 2611,
+  cAnnualFU_afterASCVD_upp = 6528,
+  cAnnualFU_afterASCVD_dist = "gamma",
+  
+  cNonFatalASCVD = 49348,
+  cNonFatalASCVD_low = 49348*0.85,
+  cNonFatalASCVD_upp = 49348*1.15,
+  cNonFatalASCVD_dist = "gamma",
+  
+  cFatalASCVD = 16760,
+  cFatalASCVD_low = 16760*0.85,
+  cFatalASCVD_upp = 16760*1.15,
+  cFatalASCVD_dist = "gamma",
+  
+  cAnnualStatin = 84,
+  
+  cMildStatinAdverse = 215,
+  cMildStatinAdverse_low = 196,
+  cMildStatinAdverse_upp = 326,
+  cMildStatinAdverse_dist = "gamma",
+  
+  cMajorStatinAdverse = 8486,
+  cMajorStatinAdverse_low = 6920, 
+  cMajorStatinAdverse_upp = 10314,
+  cMajorStatinAdverse_dist = "gamma",
+  
+  annual_discount_rate = 0.03,
+  
+  ### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups, United States, 1996 to 2020. Medical Expenditure Panel Survey.(2020)
+  cHealthcareNonCVD_18_44 = 3901,
+  cHealthcareNonCVD_45_64 = 8693,
+  cHealthcareNonCVD_65 = 12441
+
+)
+## inflation
+params$rInflation2017 = params$CPI2020 / params$CPI2017
+params$rInflation2019 = params$CPI2020 / params$CPI2019
+
+## leave some spaces for PSA
+```
+
+```{r func}
+# simply change from prob to rate than to event
+ProbToRate = function(prob, t){
+  -log(1-prob)/t
+}
+
+RateToProb = function(rate, t){
+  1 - exp(-rate*t)
+}
+# # what this t should be -- 10 years?
+# # time unit: year
+# rate = ProbToRate(pcr()/100)
+# days = rexp(1,rate)
+
+params$cont_discount_rate <- -log(1- params$annual_discount_rate) # Yearly Time Scale
+discounted <- function(undiscounted, start_year, end_year, rate = params$cont_discount_rate)
+{
+  undiscounted/ (exp(-rate*(end_year-start_year)))
+}
+
+discount <- function(value, A, ar=params$annual_discount_rate) value / (1+ar)^A
+```
+
+## Gompertz Model
+
+1. cause-delete life table for background mortality 
+2. hazard ratio * cause delete life table, the post-ASCVD life table ("die with"), combining BG death and death of the disease 
+3. purely death of the disease (not considering die immediately in the disease)
+
+```{r source, eval = FALSE}
+# BG death
+source("nonCVD_life_table.R")
+
+# combined post-ASCVD death
+## male
+mlt2020_hr = data.frame(Age = 0:(nrow(mlt2020_nonCVD)-1), qx = sapply(sapply(mlt2020_nonCVD$qx, ProbToRate, t = 1) * params$hrAfterASCVD, RateToProb, t = 1), lx = rep(0,nrow(mlt2020_nonCVD)), dx = rep(NA,nrow(mlt2020_nonCVD)))
+
+mlt2020_hr[1,"lx"] = 100000
+
+for (i in 1:nrow(mlt2020_hr)) {
+  if (mlt2020_hr[i, "lx"] > 0) {
+    mlt2020_hr[i, "dx"] = round(mlt2020_hr[i, "qx"] * mlt2020_hr[i, "lx"])
+    mlt2020_hr[i+1, "lx"] = mlt2020_hr[i, "lx"] - mlt2020_hr[i, "dx"]
+  }
+}
+mlt2020_hr  = mlt2020_hr %>% filter(!is.na(dx))
+## the last year (age 100) should let all people die
+mlt2020_hr[101, "dx"] = mlt2020_hr[101, "lx"]
+mlt2020_hr[101, "qx"] = 1
+
+mltHr_long = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(mlt2020_hr)-1)) {
+  n_row = mlt2020_hr[age+1,"dx"]
+  mltHr_long[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_m_hr = data.frame(
+  Age = mlt2020_hr$Age,
+  shape=rep(NA,nrow(mlt2020_hr)),
+  rate=rep(NA,nrow(mlt2020_hr)))
+
+for (age in 0:nrow(mlt2020_hr)-1) {
+  surv.data <- with(mltHr_long[mltHr_long$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+
+  parameters_m_hr$shape[age+1] <- surv.model$coefficients[1]
+  parameters_m_hr$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+
+
+## female
+flt2020_hr = data.frame(Age = 0:(nrow(flt2020_nonCVD)-1), qx = sapply(sapply(flt2020_nonCVD$qx, ProbToRate, t = 1) * params$hrAfterASCVD, RateToProb, t = 1), lx = rep(0,nrow(flt2020_nonCVD)), dx = rep(NA,nrow(flt2020_nonCVD)))
+
+flt2020_hr[1,"lx"] = 100000
+
+for (i in 1:nrow(flt2020_hr)) {
+  if (flt2020_hr[i, "lx"] > 0) {
+    flt2020_hr[i, "dx"] = round(flt2020_hr[i, "qx"] * flt2020_hr[i, "lx"])
+    flt2020_hr[i+1, "lx"] = flt2020_hr[i, "lx"] - flt2020_hr[i, "dx"]
+  }
+}
+flt2020_hr  = flt2020_hr %>% filter(!is.na(dx))
+## the last year (age 100) should let all people die
+flt2020_hr[101, "dx"] = flt2020_hr[101, "lx"]
+flt2020_hr[101, "qx"] = 1
+
+fltHr_long = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(flt2020_hr)-1)) {
+  n_row = flt2020_hr[age+1,"dx"]
+  fltHr_long[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_f_hr = data.frame(
+  Age = flt2020_hr$Age,
+  shape=rep(NA,nrow(flt2020_hr)),
+  rate=rep(NA,nrow(flt2020_hr)))
+
+for (age in 0:nrow(flt2020_hr)-1) {
+  surv.data <- with(fltHr_long[fltHr_long$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+
+  parameters_f_hr$shape[age+1] <- surv.model$coefficients[1]
+  parameters_f_hr$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+
+## purely die of
+## male
+mlt2020_hr_CVD = data.frame(Age = 0:(nrow(mlt2020_nonCVD)-1), qx = sapply(sapply(mlt2020_nonCVD$qx, ProbToRate, t = 1) * (params$hrAfterASCVD - 1), RateToProb, t = 1), lx = rep(0,nrow(mlt2020_nonCVD)), dx = rep(NA,nrow(mlt2020_nonCVD)))
+
+mlt2020_hr_CVD[1,"lx"] = 100000
+
+for (i in 1:nrow(mlt2020_hr_CVD)) {
+  if (mlt2020_hr_CVD[i, "lx"] > 0) {
+    mlt2020_hr_CVD[i, "dx"] = round(mlt2020_hr_CVD[i, "qx"] * mlt2020_hr_CVD[i, "lx"])
+    mlt2020_hr_CVD[i+1, "lx"] = mlt2020_hr_CVD[i, "lx"] - mlt2020_hr_CVD[i, "dx"]
+  }
+}
+mlt2020_hr_CVD = mlt2020_hr_CVD %>% filter(!is.na(dx))
+mlt2020_hr_CVD[101, "dx"] = mlt2020_hr_CVD[101, "lx"]
+mlt2020_hr_CVD[101, "qx"] = 1
+
+mltHrCVD_long = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(mlt2020_hr_CVD)-1)) {
+  n_row = mlt2020_hr_CVD[age+1,"dx"]
+  mltHrCVD_long[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_m_hrCVD = data.frame(
+  Age = mlt2020_hr_CVD$Age,
+  shape=rep(NA,nrow(mlt2020_hr_CVD)),
+  rate=rep(NA,nrow(mlt2020_hr_CVD)))
+
+for (age in 0:nrow(mlt2020_hr_CVD)-1) {
+  surv.data <- with(mltHrCVD_long[mltHrCVD_long$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+
+  parameters_m_hrCVD$shape[age+1] <- surv.model$coefficients[1]
+  parameters_m_hrCVD$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+## female
+flt2020_hr_CVD = data.frame(Age = 0:(nrow(flt2020_nonCVD)-1), qx = sapply(sapply(flt2020_nonCVD$qx, ProbToRate, t = 1) * (params$hrAfterASCVD - 1), RateToProb, t = 1), lx = rep(0,nrow(flt2020_nonCVD)), dx = rep(NA,nrow(flt2020_nonCVD)))
+
+flt2020_hr_CVD[1,"lx"] = 100000
+
+for (i in 1:nrow(flt2020_hr_CVD)) {
+  if (flt2020_hr_CVD[i, "lx"] > 0) {
+    flt2020_hr_CVD[i, "dx"] = round(flt2020_hr_CVD[i, "qx"] * flt2020_hr_CVD[i, "lx"])
+    flt2020_hr_CVD[i+1, "lx"] = flt2020_hr_CVD[i, "lx"] - flt2020_hr_CVD[i, "dx"]
+  }
+}
+flt2020_hr_CVD = flt2020_hr_CVD %>% filter(!is.na(dx))
+flt2020_hr_CVD[101, "dx"] = flt2020_hr_CVD[101, "lx"]
+flt2020_hr_CVD[101, "qx"] = 1
+
+fltHrCVD_long = data.frame(Age = rep(NA, 100000), Death = rep(1, 100000))
+
+start = 1
+for (age in 0:(nrow(flt2020_hr_CVD)-1)) {
+  n_row = flt2020_hr_CVD[age+1,"dx"]
+  fltHrCVD_long[seq(start,(n_row + start - 1)),"Age"] = age
+  start = start + n_row
+}
+
+parameters_f_hrCVD = data.frame(
+  Age = flt2020_hr_CVD$Age,
+  shape=rep(NA,nrow(flt2020_hr_CVD)),
+  rate=rep(NA,nrow(flt2020_hr_CVD)))
+
+for (age in 0:nrow(flt2020_hr_CVD)-1) {
+  surv.data <- with(fltHrCVD_long[fltHrCVD_long$Age >= age,], Surv(Age, Death, origin=age))
+  surv.model <- flexsurvreg(surv.data ~ 1, dist="gompertz")
+
+  parameters_f_hrCVD$shape[age+1] <- surv.model$coefficients[1]
+  parameters_f_hrCVD$rate[age+1] <- exp(surv.model$coefficients[2])
+}
+
+save(mlt2020_nonCVD, mlt2020_hr, mlt2020_hr_CVD, flt2020_nonCVD, flt2020_hr, flt2020_hr_CVD, parameters_f, parameters_m, parameters_f_hr, parameters_m_hr, file = "life table/MarkovCVD_gompertz.RData")
+```
+
+```{r life-function}
+ageAtBGDeath <- function(currentAge, gender)
+{
+  currentAge_f <- floor(currentAge) #negative time to secular death issue
+  
+  # Male 1 FEMALE 2
+  if(gender == 2)
+  {
+    shape <- parameters_f$shape[currentAge_f+1]
+    rate  <- parameters_f$rate[currentAge_f+1]
+  }
+  else
+  {
+    shape <- parameters_m$shape[currentAge_f+1]
+    rate  <- parameters_m$rate[currentAge_f+1]
+  }
+  
+  min(currentAge + rgompertz(1, shape, rate), 100)
+}
+
+ageAtDeath_hr = function(currentAge, gender)
+{
+  currentAge_f <- floor(currentAge) #negative time to secular death issue
+
+  # Male 1 FEMALE 2
+  if(gender == 2)
+  {
+    shape <- parameters_f_hr$shape[currentAge_f+1]
+    rate  <- parameters_f_hr$rate[currentAge_f+1]
+    age = min(currentAge + rgompertz(1, shape, rate), max(parameters_f_hr$Age))
+  }
+  else
+  {
+    shape <- parameters_m_hr$shape[currentAge_f+1]
+    rate  <- parameters_m_hr$rate[currentAge_f+1]
+    age = min(currentAge + rgompertz(1, shape, rate), max(parameters_m_hr$Age))
+  }
+
+  age
+}
+
+ageAtDeath_hrCVD = function(currentAge, gender)
+{
+  currentAge_f <- floor(currentAge) #negative time to secular death issue
+
+  # Male 1 FEMALE 2
+  if(gender == 2)
+  {
+    shape <- parameters_f_hrCVD$shape[currentAge_f+1]
+    rate  <- parameters_f_hrCVD$rate[currentAge_f+1]
+    age = min(currentAge + rgompertz(1, shape, rate), max(parameters_f_hrCVD$Age))
+  }
+  else
+  {
+    shape <- parameters_m_hrCVD$shape[currentAge_f+1]
+    rate  <- parameters_m_hrCVD$rate[currentAge_f+1]
+    age = min(currentAge + rgompertz(1, shape, rate), max(parameters_m_hrCVD$Age))
+  }
+
+  age
+}
+
+
+```
+
+```{r life-table-comparison}
+ggplot(mlt2020_nonCVD, aes(x = Age, y = cumsum(dx * 100000/ sum(mlt2020_nonCVD$dx)))) +
+  geom_point(color = "blue")+
+  geom_point(data = mlt2020_hr, aes(x = Age, y = cumsum(dx)), color = "red") +
+  geom_point(data = mlt2020_hr_CVD, aes(x = Age, y = cumsum(dx)), color = "green") +
+  labs(
+    y = "N of death",
+    title = "Male Number dying between ages 0 ~ x + 1", 
+    subtitle = "blue: BG, red: post-CVD, green: pure-CVD = post-CVD - BG")
+
+
+ggplot(flt2020_nonCVD, aes(x = Age, y = cumsum(dx * 100000/ sum(flt2020_nonCVD$dx)))) +
+  geom_point(color = "blue")+
+  geom_point(data = flt2020_hr, aes(x = Age, y = cumsum(dx)), color = "red") +
+  geom_point(data = flt2020_hr_CVD, aes(x = Age, y = cumsum(dx)), color = "green") +
+  labs(
+    y = "N of death",
+    title = "Female Number dying between ages 0 ~ x + 1", 
+    subtitle = "blue: BG, red: post-CVD, green: pure-CVD = post-CVD - BG")
+
+ggplot(mlt2020_nonCVD, aes(x = Age, y = mlt2020_nonCVD$qx)) +
+  geom_point(color = "blue")+
+  geom_point(data = mlt2020_hr, aes(x = Age, y = qx), color = "red") +
+  geom_point(data = mlt2020_hr_CVD, aes(x = Age, y = qx), color = "green") +
+  labs(
+    y = "Probability of Death",
+    title = "Male Mortality between ages 0 ~ x + 1", 
+    subtitle = "blue: BG, red: post-CVD, green: pure-CVD = post-CVD - BG")
+
+ggplot(flt2020_nonCVD, aes(x = Age, y = flt2020_nonCVD$qx)) +
+  geom_point(color = "blue")+
+  geom_point(data = flt2020_hr, aes(x = Age, y = qx), color = "red") +
+  geom_point(data = flt2020_hr_CVD, aes(x = Age, y = qx), color = "green") +
+  labs(
+    y = "Probability of Death",
+    title = "Female Mortality between ages 0 ~ x + 1", 
+    subtitle = "blue: BG, red: post-CVD, green: pure-CVD = post-CVD - BG")
+
+```
+
+# healthy-sick-death example
+
+```{r population}
+source('pcr.R')
+load("./NHANES/nhanes_full.RData")
+
+race = 1:4
+names(race) = c("White", "African American", "Hispanic", "Other")
+race_convert = function(num) {
+  return(names(race[num]))
+}
+
+bp_treatment = 1:2
+names(bp_treatment) = c("Yes","No")
+
+smoker = 1:3
+names(smoker) = c("Every day","Some days","Not at all")
+
+diabetic = 1:2
+names(diabetic) = c("Yes","No")
+
+nhanes_sample = nhanes_pop %>% 
+  rowwise() %>%
+  mutate(PCErisk = pcr(gender = ifelse(RIAGENDR == 1, 'M', 'F'),
+                       RIDAGEYR,
+                       race_convert(RIDRETH1),
+                       LBXTC,
+                       LBDHDD,
+                       BPXSY1,
+                       BPQ050A == 1,
+                       SMQ040 %in% c(1,2),
+                       DIQ010 == 1,
+                       0)[1]/100)
+
+nhanes_cohort = nhanes_sample[sample(1:nrow(nhanes_sample), 100000, prob=1/nhanes_pop$WTMEC2YR, replace = TRUE),]
+
+cohort = nhanes_cohort %>%
+  rowwise() %>%
+  mutate(BGdeath = ageAtBGDeath(RIDAGEYR, RIAGENDR),
+         GetCVD = rexp(1,ProbToRate(PCErisk, 10)) + RIDAGEYR,
+         combinedCVDdeath = ageAtDeath_hr(GetCVD, RIAGENDR),
+         pureCVDdeath = ageAtDeath_hrCVD(GetCVD, RIAGENDR))
+
+
+cohort %>% filter(GetCVD < BGdeath) %>%
+  mutate(cause = ifelse(pureCVDdeath >= BGdeath | is.na(pureCVDdeath), 
+                                "BG", "CVD"),
+                  LE = ifelse(pureCVDdeath >= BGdeath | is.na(pureCVDdeath), 
+                              BGdeath, pureCVDdeath)) %>%
+  group_by(cause) %>%
+  summarise(LE = mean(LE), prop = n() / 100000)
+
+
+
+
+# if cut the postCVDdeath to be pureCVDdeath and BGdeath
+## meaning that only pureCVDdeath less than BGdeath will be used, and they will die of CVD disease
+cohort %>% mutate(cause = ifelse(pureCVDdeath >= BGdeath | is.na(pureCVDdeath), 
+                                "BG", "CVD"),
+                  LE = ifelse(pureCVDdeath >= BGdeath | is.na(pureCVDdeath), 
+                              BGdeath, pureCVDdeath)) %>%
+  group_by(cause) %>%
+  summarise(LE = mean(LE), prop = n() / 100000)
+
+# if use hrCVDdeath after ASCVD, not considering BGdeath. 
+## Once ASCVD happens(CVD < BGDeath), we will actually re-draw the mortality
+## The way using right now.
+cohort %>% mutate(cause = ifelse(is.na(combinedCVDdeath) | BGdeath <= GetCVD, 
+                                 "BG", "CVD"),
+                  LE = ifelse(is.na(combinedCVDdeath) | BGdeath <= GetCVD,
+                              BGdeath, combinedCVDdeath)) %>%
+  group_by(cause) %>%
+  summarise(LE = mean(LE), prop = n() / 100000)
+  
+
+# if use hrCVDdeath as a competing event to BGdeath
+cohort %>% mutate(cause = ifelse(combinedCVDdeath >= BGdeath | is.na(combinedCVDdeath), 
+                                "BG", "CVD"),
+                  LE = ifelse(combinedCVDdeath >= BGdeath | is.na(combinedCVDdeath), 
+                              BGdeath, combinedCVDdeath)) %>%
+  group_by(cause) %>%
+  summarise(LE = mean(LE), prop = n() / 100000)
+
+cohort %>% ungroup() %>%
+  summarise(mean(BGdeath), mean(combinedCVDdeath, na.rm = TRUE), mean(pureCVDdeath, na.rm = TRUE))
+
+```
