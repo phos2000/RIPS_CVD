@@ -1,0 +1,300 @@
+---
+title: "Common Random Number in DES simulation -- based on CVD model"
+author: "Astrid Yu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+---
+
+# Preparation
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel")
+install.lib<-load.lib[!load.lib %in% installed.packages()]
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+sapply(load.lib,require,character=TRUE)
+library(simmer)
+select <- dplyr::select
+
+options("scipen"=1000, "digits"=4)
+```
+
+## Inputs
+
+Spahillari, et al. (2020)
+
+```{r inputs}
+params = list(
+  ## basic/general from Stroke paper, 2023
+  strategy = 0, # or 1
+  vN = 1000,
+  vHorizon = 10,
+  discount_rate = 0.03,
+  wtp = 100000,
+  CPI2017 = 245.12,
+  CPI2019 = 255.657,
+  CPI2023 = 302.408,
+  
+  ## events from paper 2017
+  rrStatinsASCVD = 0.79,
+  rrStatinsASCVD_low = 0.77,
+  rrStatinsASCVD_upp = 0.81,
+  rrStatinsASCVD_dist = "lnorm",
+  
+  hrAfterASCVD = 1.9,
+  hrAfterASCVD_low = 1.60,
+  hrAfterASCVD_upp = 2.40, 
+  hrAfterASCVD_dist = "lnorm", # log-normal
+  
+  mortalityFirstYearASCVD_female_young = 0.09,
+  mortalityFirstYearASCVD_female_young_dist = "beta",
+  
+  mortalityFirstYearASCVD_female_old = 0.3,
+  mortalityFirstYearASCVD_female_old_dist = "beta",
+  
+  mortalityFirstYearASCVD_male_young = 0.14,
+  mortalityFirstYearASCVD_male_young_dist = "beta",
+  
+  mortalityFirstYearASCVD_male_old = 0.25,
+  mortalityFirstYearASCVD_male_old_dist = "beta",
+  
+  pMildStatinAdverse = 0.047,
+  pMildStatinAdverse_low = 0.047*0.85, 
+  pMildStatinAdverse_upp = 0.047*1.15,
+  pMildStatinAdverse_dist = "beta",
+  
+  pMajorStatinAdverse = 0.006/100,
+  pMajorStatinAdverse_low = 0.006/100*0.85,
+  pMajorStatinAdverse_upp = 0.006/100*1.15,
+  pMajorStatinAdverse_dist = "beta",
+  
+  pMajorStatinAdverseBeingFatal = 0.09/100,
+  pMajorStatinAdverseBeingFatal_low = 0.09/100*0.85,
+  pMajorStatinAdverseBeingFatal_upp = 0.09/100*1.15,
+  pMajorStatinAdverseBeingFatal_dist = "beta",
+
+  ## utility
+  uHealthy = 1,
+  uAfterASCVD = 0.773,
+  uAfterASCVD_low = 0.773*0.85,
+  uAfterASCVD_upp = 0.773*1.15,
+  uAfterASCVD_dist = "beta",
+  
+  uHealthyStatin = 0.996,
+  uHealthyStatin_low = 0.991,
+  uHealthyStatin_upp = 1.000,
+  uHealthyStatin_dist = "beta",
+  
+  uPenaltyMildStatinAdverse = -0.0055,
+  uPenaltyMajorStatinAdverse = -0.0383,
+  
+  uDeath = 0,
+  
+  ## cost(2017)
+  cAnnualFU_afterASCVD = 3917,
+  cAnnualFU_afterASCVD_low = 2611,
+  cAnnualFU_afterASCVD_upp = 6528,
+  cAnnualFU_afterASCVD_dist = "gamma",
+  
+  cNonFatalASCVD = 49348,
+  cNonFatalASCVD_low = 49348*0.85,
+  cNonFatalASCVD_upp = 49348*1.15,
+  cNonFatalASCVD_dist = "gamma",
+  
+  cFatalASCVD = 16760,
+  cFatalASCVD_low = 16760*0.85,
+  cFatalASCVD_upp = 16760*1.15,
+  cFatalASCVD_dist = "gamma",
+  
+  cAnnualStatin = 84,
+  
+  cMildStatinAdverse = 215,
+  cMildStatinAdverse_low = 196,
+  cMildStatinAdverse_upp = 326,
+  cMildStatinAdverse_dist = "gamma",
+  
+  cMajorStatinAdverse = 8486,
+  cMajorStatinAdverse_low = 6920, 
+  cMajorStatinAdverse_upp = 10314,
+  cMajorStatinAdverse_dist = "gamma",
+  
+  annual_discount_rate = 0.03,
+  
+  ### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups, United States, 1996 to 2020. Medical Expenditure Panel Survey.(2020)
+  cHealthcareNonCVD_18_44 = 3901,
+  cHealthcareNonCVD_45_64 = 8693,
+  cHealthcareNonCVD_65 = 12441
+
+)
+## inflation
+params$rInflation2017 = params$CPI2023 / params$CPI2017
+params$rInflation2019 = params$CPI2023 / params$CPI2019
+
+## leave some spaces for PSA
+```
+
+```{r func}
+# simply change from prob to rate than to event
+ProbToRate = function(prob, t){
+  -log(1-prob)/t
+}
+
+RateToProb = function(rate, t){
+  1 - exp(-rate*t)
+}
+# # what this t should be -- 10 years?
+# # time unit: year
+# rate = ProbToRate(pcr()/100)
+# days = rexp(1,rate)
+
+params$cont_discount_rate <- -log(1- params$annual_discount_rate) # Yearly Time Scale
+discounted <- function(undiscounted, start_year, end_year, rate = params$cont_discount_rate)
+{
+  undiscounted/ (exp(-rate*(end_year-start_year)))
+}
+
+discount <- function(value, A, ar=params$annual_discount_rate) value / (1+ar)^A
+```
+
+## PCE
+
+We use the pooled cohort equation to calculate the risk of CVD from risk factors.
+
+<https://github.com/spgarbet/desdt/tree/main/framingham>
+
+## Sample population
+
+We use NHANES study for the simulated population (limited by the PCE limits).
+
+Use the 2017-2018 version: <https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2017>
+
+The sample is vascular-history-free:\
+MCQ160d - Ever told you had angina/angina pectoris\
+MCQ160e - Ever told you had heart attack\
+MCQ160f - Ever told you had a stroke
+
+```{r nhanes-clearance, eval=FALSE}
+# source("building_nhanes_sample.R")
+load("basepop.RData")
+```
+
+## Gompertz Model
+
+We use Gompertz model based on US cause-deleted life table to predict the death age.
+
+```{r source}
+source("nonCVD_life_table.R")
+load("life table/MarkovCVD_gompertz.RData")
+```
+
+# PRS
+
+1.  add this Z score PRS rnorm(1,0,1) [-5,5]\
+2.  use 1.73 Hazard ratio from Nature Medicine Paper
+
+10-year ASCVD prob adding PRS risk:\
+1 - exp(log(1 - pce_orig) \* 1.73\^PRS)
+
+## Landscape
+
+```{r}
+# 2018 guidelines high risk -- must use statins
+subset(nhanes_sample, LBDLDL >= 190 | DIQ010 == 1 | pce_orig >= 0.2)
+
+# low risk -- needn't need use statins
+subset(nhanes_sample, LBDLDL < 190 & DIQ010 != 1 & pce_orig < 0.05)
+
+# borderline risk 0.05-0.075
+hist(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
+mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
+mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
+mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
+
+# Intermediate risk
+hist(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
+mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
+mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
+```
+
+## Detailed camparison plots
+
+```{r}
+# Total
+nhanes_sample %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_density() +
+  facet_grid(PCE_type ~ .) + 
+  labs(title = "Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  theme_bw()
+
+## PRS won't change the decision
+# High Risk, must use statins 
+nhanes_sample %>%
+  filter(LBDLDL >= 190 | DIQ010 == 1 | pce_orig >= 0.2) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_density() +
+  facet_grid(PCE_type ~ .) + 
+  labs(title = "Distribution of High 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  theme_bw()
+
+# Low Risk, < 5%
+nhanes_sample %>%
+  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig < 0.05) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  geom_histogram(aes(y = ..density..), bins = 30) +
+  geom_density() +
+  facet_grid(PCE_type ~ .) + 
+  labs(title = "Distribution of Low 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  theme_bw()
+
+# PRS may change the decision
+## Borderline Risk, 5% - 7.5%
+nhanes_sample %>%
+  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  geom_histogram(aes(y = ..density..), bins = 30) +
+  geom_density() +
+  facet_grid(PCE_type ~ .) + 
+  labs(title = "Distribution of Borderline 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  theme_bw()
+
+## Intermediate Risk
+nhanes_sample %>%
+  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  geom_histogram(aes(y = ..density..), bins = 30) +
+  geom_density() +
+  facet_grid(PCE_type ~ .) + 
+  labs(title = "Distribution of Intermediate 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  theme_bw()
+
+```
+
+# Intervention
+
+strategy 0. use statins as 2018 ACC/AHA
+
+Individuals(age 40 - 80):
+
+-   with diabetes, or
+
+-   low-density lipoprotein cholesterol level \>= 190 mg/dl, or
+
+-   estimated 10-year ASCVD risk greater than or equal to 7.5%.
+
+Statins will be taken until the ASCVD happen.
+
+Adverse events:
+
+Adverse events will happen immediately after using statins. The major adverse event will overlap the mild adverse event. The death caused by the major adverse event should happen immediately after the event.
+
+Strategy 1. use statins as 2018 ACC/AHA, but use the PRS-revised PCE instead.
