@@ -11,13 +11,14 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel")
+load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel", "Rcpp")
 install.lib<-load.lib[!load.lib %in% installed.packages()]
 for(lib in install.lib) install.packages(lib,dependencies=TRUE)
 sapply(load.lib,require,character=TRUE)
 library(simmer)
 select <- dplyr::select
 
+sourceCpp("ASCVD_RIPS.cpp")
 options("scipen"=1000, "digits"=4)
 ```
 
@@ -26,136 +27,152 @@ options("scipen"=1000, "digits"=4)
 Spahillari, et al. (2020)
 
 ```{r inputs}
-params = list(
-  ## basic/general from Stroke paper, 2023
-  strategy = 0, # or 1
-  vN = 1000,
-  vHorizon = 10,
-  discount_rate = 0.03,
-  wtp = 100000,
-  CPI2017 = 245.12,
-  CPI2019 = 255.657,
-  CPI2023 = 302.408,
-  
-  ## events from paper 2017
-  rrStatinsASCVD = 0.79,
-  rrStatinsASCVD_low = 0.77,
-  rrStatinsASCVD_upp = 0.81,
-  rrStatinsASCVD_dist = "lnorm",
-  
-  hrAfterASCVD = 1.9,
-  hrAfterASCVD_low = 1.60,
-  hrAfterASCVD_upp = 2.40, 
-  hrAfterASCVD_dist = "lnorm", # log-normal
-  
-  mortalityFirstYearASCVD_female_young = 0.09,
-  mortalityFirstYearASCVD_female_young_dist = "beta",
-  
-  mortalityFirstYearASCVD_female_old = 0.3,
-  mortalityFirstYearASCVD_female_old_dist = "beta",
-  
-  mortalityFirstYearASCVD_male_young = 0.14,
-  mortalityFirstYearASCVD_male_young_dist = "beta",
-  
-  mortalityFirstYearASCVD_male_old = 0.25,
-  mortalityFirstYearASCVD_male_old_dist = "beta",
-  
-  pMildStatinAdverse = 0.047,
-  pMildStatinAdverse_low = 0.047*0.85, 
-  pMildStatinAdverse_upp = 0.047*1.15,
-  pMildStatinAdverse_dist = "beta",
-  
-  pMajorStatinAdverse = 0.006/100,
-  pMajorStatinAdverse_low = 0.006/100*0.85,
-  pMajorStatinAdverse_upp = 0.006/100*1.15,
-  pMajorStatinAdverse_dist = "beta",
-  
-  pMajorStatinAdverseBeingFatal = 0.09/100,
-  pMajorStatinAdverseBeingFatal_low = 0.09/100*0.85,
-  pMajorStatinAdverseBeingFatal_upp = 0.09/100*1.15,
-  pMajorStatinAdverseBeingFatal_dist = "beta",
+vN = 100000
+vHorizon = 10
+annual_discount_rate = 0.03
+wtp = 100000
+CPI2017 = 245.12
+CPI2019 = 255.657
+CPI2023 = 302.408
 
-  ## utility
-  uHealthy = 1,
-  uAfterASCVD = 0.773,
-  uAfterASCVD_low = 0.773*0.85,
-  uAfterASCVD_upp = 0.773*1.15,
-  uAfterASCVD_dist = "beta",
-  
-  uHealthyStatin = 0.996,
-  uHealthyStatin_low = 0.991,
-  uHealthyStatin_upp = 1.000,
-  uHealthyStatin_dist = "beta",
-  
-  uPenaltyMildStatinAdverse = -0.0055,
-  uPenaltyMajorStatinAdverse = -0.0383,
-  
-  uDeath = 0,
-  
-  ## cost(2017)
-  cAnnualFU_afterASCVD = 3917,
-  cAnnualFU_afterASCVD_low = 2611,
-  cAnnualFU_afterASCVD_upp = 6528,
-  cAnnualFU_afterASCVD_dist = "gamma",
-  
-  cNonFatalASCVD = 49348,
-  cNonFatalASCVD_low = 49348*0.85,
-  cNonFatalASCVD_upp = 49348*1.15,
-  cNonFatalASCVD_dist = "gamma",
-  
-  cFatalASCVD = 16760,
-  cFatalASCVD_low = 16760*0.85,
-  cFatalASCVD_upp = 16760*1.15,
-  cFatalASCVD_dist = "gamma",
-  
-  cAnnualStatin = 84,
-  
-  cMildStatinAdverse = 215,
-  cMildStatinAdverse_low = 196,
-  cMildStatinAdverse_upp = 326,
-  cMildStatinAdverse_dist = "gamma",
-  
-  cMajorStatinAdverse = 8486,
-  cMajorStatinAdverse_low = 6920, 
-  cMajorStatinAdverse_upp = 10314,
-  cMajorStatinAdverse_dist = "gamma",
-  
-  annual_discount_rate = 0.03,
-  
-  ### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups, United States, 1996 to 2020. Medical Expenditure Panel Survey.(2020)
-  cHealthcareNonCVD_18_44 = 3901,
-  cHealthcareNonCVD_45_64 = 8693,
-  cHealthcareNonCVD_65 = 12441
+## events from paper 2017
+rrStatinsASCVD = 0.79
+rrStatinsASCVD_low = 0.77
+rrStatinsASCVD_upp = 0.81
+rrStatinsASCVD_dist = "lnorm"
 
-)
-## inflation
-params$rInflation2017 = params$CPI2023 / params$CPI2017
-params$rInflation2019 = params$CPI2023 / params$CPI2019
+hrAfterASCVD = 1.9
+hrAfterASCVD_low = 1.60
+hrAfterASCVD_upp = 2.40 
+hrAfterASCVD_dist = "lnorm" # log-normal
+
+pFatalASCVD_f_young = 0.09
+pFatalASCVD_f_young_dist = "beta"
+
+pFatalASCVD_f_old = 0.3
+pFatalASCVD_f_old_dist = "beta"
+
+pFatalASCVD_m_young = 0.14
+pFatalASCVD_m_young_dist = "beta"
+
+pFatalASCVD_m_old = 0.25
+pFatalASCVD_m_old_dist = "beta"
+
+pMildAdverse = 0.047
+pMildAdverse_low = 0.047*0.85 
+pMildAdverse_upp = 0.047*1.15
+pMildAdverse_dist = "beta"
+
+pMajorAdverse = 0.006/100
+pMajorAdverse_low = 0.006/100*0.85
+pMajorAdverse_upp = 0.006/100*1.15
+pMajorAdverse_dist = "beta"
+
+pMajorAdverseBeingFatal = 0.09/100
+pMajorAdverseBeingFatal_low = 0.09/100*0.85
+pMajorAdverseBeingFatal_upp = 0.09/100*1.15
+pMajorAdverseBeingFatal_dist = "beta"
+
+## utility
+uHealthy = 1
+uAfterASCVD = 0.773
+uAfterASCVD_low = 0.773*0.85
+uAfterASCVD_upp = 0.773*1.15
+uAfterASCVD_dist = "beta"
+
+uHealthyStatin = 0.996
+uHealthyStatin_low = 0.991
+uHealthyStatin_upp = 1.000
+uHealthyStatin_dist = "beta"
+
+uPenaltyMildAdverse = -0.0055
+uPenaltyMajorAdverse = -0.0383
+
+uDeath = 0
+
+# *Costs -------------------------------------------------------------------
+cost_year = 2023
+tbl_CPI <- read.csv("tbl_CPI.csv")
+
+## cost(2017)
+cyrAnnualFU = 2017
+cAnnualFU = 3917 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrAnnualFU]
+cAnnualFU_low = 2611 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrAnnualFU]
+cAnnualFU_upp = 6528 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrAnnualFU]
+cAnnualFU_dist = "gamma"
+
+cyrNonFatalASCVD = 2017
+cNonFatalASCVD = 49348 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrNonFatalASCVD]
+cNonFatalASCVD_low = cNonFatalASCVD*0.85
+cNonFatalASCVD_upp = cNonFatalASCVD*1.15
+cNonFatalASCVD_dist = "gamma"
+
+cyrFatalASCVD = 2017
+cFatalASCVD = 16760 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrFatalASCVD]
+cFatalASCVD_low = cFatalASCVD*0.85
+cFatalASCVD_upp = cFatalASCVD*1.15
+cFatalASCVD_dist = "gamma"
+
+cyrAnnualStatin = 2017
+cAnnualStatin = 84 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrAnnualStatin]
+
+cyrMildAdverse = 2017
+cMildAdverse = 215 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMildAdverse]
+cMildAdverse_low = 196 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMildAdverse]
+cMildAdverse_upp = 326 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMildAdverse]
+cMildAdverse_dist = "gamma"
+
+cyrMajorAdverse = 2017
+cMajorAdverse = 8486 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMajorAdverse]
+cMajorAdverse_low = 6920 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMajorAdverse]
+cMajorAdverse_upp = 10314 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrMajorAdverse]
+cMajorAdverse_dist = "gamma"
+
+### source：Agency for Healthcare Research and Quality. Mean expenditure per person by age groups United States, 1996 to 2020. Medical Expenditure Panel Survey.(2020)
+cyrBgNonCVD = 2020
+# Input data
+x <- c(31.5, 55, 80)
+y <- c(3901, 8693, 12441) * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrBgNonCVD]
+
+# Perform linear regression on the original data
+model_bgcost <- lm(y ~ x)
+intercept_bgcost = coef(model_bgcost)[1]
+slope_bgcost = coef(model_bgcost)[2]
+
+# https://www.cdc.gov/nchs/hus/topics/heart-disease-prevalence.htm
+x <- c(50, 60, 70, 87.5)
+y <- c(3.6/100, 9/100, 14.3/100, 24.2/100)
+# Medical care costs among patients with established cardiovascular disease. Am J Manag Care. 2010.
+cyrCVDcost = 2010
+CVDcost = 18953 * tbl_CPI$CPI[tbl_CPI$Year == cost_year]/tbl_CPI$CPI[tbl_CPI$Year == cyrCVDcost]
+
+model_CVDpct <- lm(y ~ x)
+intercept_CVDpct = coef(model_CVDpct)[1]
+slope_CVDpct = coef(model_CVDpct)[2]
+
+c_healthy_coef_vec = c(CVDcost, intercept_bgcost, slope_bgcost, intercept_CVDpct, slope_CVDpct)
+
+cHealthyAve = function(age, delta_time){
+  f <- function(age) {((c_healthy_coef_vec[3] - c_healthy_coef_vec[5] * c_healthy_coef_vec[1])*age + (c_healthy_coef_vec[2] - c_healthy_coef_vec[4] * c_healthy_coef_vec[1])) / (1 - c_healthy_coef_vec[4] - c_healthy_coef_vec[5]*age)}
+  
+  return(integrate(f, age, age+delta_time)$value/delta_time)
+}
 
 ## leave some spaces for PSA
 ```
 
 ```{r func}
-# simply change from prob to rate than to event
-ProbToRate = function(prob, t){
-  -log(1-prob)/t
-}
+cont_discount_rate <- -log(1- annual_discount_rate) # Yearly Time Scale
+# discounted <- function(undiscounted, start_year, end_year, rate = cont_discount_rate)
+# {
+#   undiscounted/ (exp(-rate*(end_year-start_year)))
+# }
 
-RateToProb = function(rate, t){
-  1 - exp(-rate*t)
-}
-# # what this t should be -- 10 years?
-# # time unit: year
-# rate = ProbToRate(pcr()/100)
-# days = rexp(1,rate)
+discount <- function(value, A, ar=annual_discount_rate) value / (1+ar)^A
 
-params$cont_discount_rate <- -log(1- params$annual_discount_rate) # Yearly Time Scale
-discounted <- function(undiscounted, start_year, end_year, rate = params$cont_discount_rate)
-{
-  undiscounted/ (exp(-rate*(end_year-start_year)))
+cont_discount <- function(start_time, delta_time){
+  integrate(function(x) 1/((1+annual_discount_rate)^x), start_time, start_time + delta_time)$value
 }
-
-discount <- function(value, A, ar=params$annual_discount_rate) value / (1+ar)^A
 ```
 
 ## PCE
@@ -201,21 +218,21 @@ load("life table/MarkovCVD_gompertz.RData")
 
 ```{r}
 # 2018 guidelines high risk -- must use statins
-subset(nhanes_sample, LBDLDL >= 190 | DIQ010 == 1 | pce_orig >= 0.2)
+subset(nhanes_sample, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
 
 # low risk -- needn't need use statins
-subset(nhanes_sample, LBDLDL < 190 & DIQ010 != 1 & pce_orig < 0.05)
+subset(nhanes_sample, LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05)
 
 # borderline risk 0.05-0.075
-hist(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
-mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
-mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
-mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
+hist(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
+mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
+mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
+mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
 
 # Intermediate risk
-hist(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
-mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
-mean(subset(nhanes_sample,LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
+hist(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
+mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
+mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
 ```
 
 ## Detailed camparison plots
@@ -234,7 +251,7 @@ nhanes_sample %>%
 ## PRS won't change the decision
 # High Risk, must use statins 
 nhanes_sample %>%
-  filter(LBDLDL >= 190 | DIQ010 == 1 | pce_orig >= 0.2) %>%
+  filter(LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
   geom_histogram(aes(y = ..density..), binwidth = 0.02) +
@@ -245,7 +262,7 @@ nhanes_sample %>%
 
 # Low Risk, < 5%
 nhanes_sample %>%
-  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig < 0.05) %>%
+  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
   geom_histogram(aes(y = ..density..), bins = 30) +
@@ -257,7 +274,7 @@ nhanes_sample %>%
 # PRS may change the decision
 ## Borderline Risk, 5% - 7.5%
 nhanes_sample %>%
-  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
+  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
   geom_histogram(aes(y = ..density..), bins = 30) +
@@ -268,7 +285,7 @@ nhanes_sample %>%
 
 ## Intermediate Risk
 nhanes_sample %>%
-  filter(LBDLDL < 190 & DIQ010 != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
+  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
   geom_histogram(aes(y = ..density..), bins = 30) +
@@ -298,3 +315,79 @@ Adverse events:
 Adverse events will happen immediately after using statins. The major adverse event will overlap the mild adverse event. The death caused by the major adverse event should happen immediately after the event.
 
 Strategy 1. use statins as 2018 ACC/AHA, but use the PRS-revised PCE instead.
+
+possible branches:
+
+1.  survive until horizon
+
+2.  die of background mortality before horizon
+
+3.  get CVD, die of first-year ASCVD
+
+4.  get CVD, die after first-year ASCVD event\
+
+```{r}
+sim_ASCVD = function(strategy) {
+  bind_cols(mod_main(n_pop = nrow(nhanes_sample), strategy = strategy, 
+                    horizon = vHorizon,
+              disc_rate = annual_discount_rate,
+              age_vec = nhanes_sample$RIDAGEYR, 
+              male_vec = nhanes_sample$male, 
+              race_vec = nhanes_sample$race,
+              diabetes_vec = nhanes_sample$diabetes_rollup, 
+              ldl_chol_vec = nhanes_sample$LBDLDL,
+              pce_orig_vec = nhanes_sample$pce_orig, 
+              pce_prs_vec = nhanes_sample$pce_prs,
+              rrStatinsASCVD = rrStatinsASCVD,
+              pFatalASCVD_m_young = pFatalASCVD_m_old, 
+              pFatalASCVD_m_old = pFatalASCVD_m_old,
+              pFatalASCVD_f_young = pFatalASCVD_f_young, 
+              pFatalASCVD_f_old = pFatalASCVD_f_old,
+              pMildAdverse = pMajorAdverse, 
+              pMajorAdverse = pMajorAdverse, 
+              pMajorAdverseBeingFatal = pMajorAdverseBeingFatal,
+              parameters_f_shape = parameters_f$shape,
+              parameters_f_rate = parameters_f$rate,
+              parameters_m_shape = parameters_m$shape,
+              parameters_m_rate = parameters_m$rate,
+              parameters_f_hr_shape = parameters_f_hr$shape, 
+              parameters_f_hr_rate = parameters_f_hr$rate, 
+              parameters_m_hr_shape = parameters_m_hr$shape,
+              parameters_m_hr_rate = parameters_m_hr$rate, 
+              uDeath = uDeath, uHealthy = uHealthy, 
+              uAfterASCVD = uAfterASCVD,
+              uHealthyStatin = uHealthyStatin, 
+              uPenaltyMajorAdverse = uPenaltyMajorAdverse, 
+              uPenaltyMildAdverse = uPenaltyMildAdverse,
+              cAnnualStatin = cAnnualStatin, 
+              cAnnualFU = cAnnualFU, cFatalASCVD = cFatalASCVD, 
+              cNonFatalASCVD = cNonFatalASCVD, 
+              cMildAdverse = cMildAdverse, cMajorAdverse = cMajorAdverse))}
+
+results1 = sim_ASCVD(1)
+# validation
+subset(results1, mild_adverse != 0 | major_adverse != 0)
+
+# horizon
+subset(results1, death == 0)
+subset(results1, death == 0 & ttdeath != 10)
+
+# BG death
+subset(results1, BGdeath == 1)
+
+# Fatal ASCVD
+subset(results1, fatal_ASCVD == 1)
+subset(results1, fatal_ASCVD == 1 & ASCVDdeath != 1)
+
+# nonfatal ASCVD
+subset(results1, fatal_ASCVD == 0 & ASCVDdeath == 1)
+
+results1 = sim_ASCVD(1)
+results0 = sim_ASCVD(0)
+rbind(colMeans(results1), colMeans(results0))
+
+results1 = sim_ASCVD(1)
+results0 = sim_ASCVD(0)
+rbind(colMeans(results1), colMeans(results0))
+
+```
