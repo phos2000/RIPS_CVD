@@ -41,7 +41,7 @@ NumericVector rgompertz(int n, double shape, double rate){
 
 NumericVector rEXP(int n, double rate){
   // calling rexp()
-  Function f("rexp");
+  Function f("rexp"); 
   return f(n, rate);
 }
 
@@ -134,11 +134,11 @@ List mod_main(int n_pop, bool strategy, int horizon,
     double age_ini = age_vec(id); //initial age
     double age_mod = age_ini;
     bool male   = male_vec(id);
-    bool race = race_vec(id);
-    int ldl_chol = ldl_chol_vec(id);
+    //bool race = race_vec(id);
+    double ldl_chol = ldl_chol_vec(id);
     bool diabetes = diabetes_vec(id);
-    bool pce_orig = pce_orig_vec(id);
-    bool pce_prs = pce_prs_vec(id);
+    double pce_orig = pce_orig_vec(id);
+    double pce_prs = pce_prs_vec(id);
     
     //Define tracker variables
     char state = 'H';
@@ -157,13 +157,13 @@ List mod_main(int n_pop, bool strategy, int horizon,
       if (pce_prs >= 0.075){statins = 1;}
     } else if (pce_orig >= 0.075){statins = 1;}
     
+    //Statins adverse event
     if (statins) {
-      
       // adverse event
       if (R::unif_rand()< pMajorAdverse){
         major_adverse_vec(id) = 1;
         if (R::unif_rand() < pMajorAdverseBeingFatal){
-          
+          //Fatal adverse event
           delta_time = 0;
           
           state = 'D'; // ever change state, calculate all the cost and utility.
@@ -184,16 +184,13 @@ List mod_main(int n_pop, bool strategy, int horizon,
           event_death_vec(id) = 1;
           ttevent_death_vec(id) = time;
           
-          
-          
         } else {
           uStatins = uHealthyStatin - uPenaltyMajorAdverse;
           //one-time cost
           cost_vec(id) += cMajorAdverse;
           cost_disc_vec(id) += cMajorAdverse / pow(1.0 + disc_rate, time);
-          
         }
-      } else if (unif_rand()< pMildAdverse){
+      } else if (R::unif_rand()< pMildAdverse){
         mild_adverse_vec(id) = 1;
         uStatins = uHealthyStatin - uPenaltyMildAdverse;
         //one-time cost
@@ -218,8 +215,8 @@ List mod_main(int n_pop, bool strategy, int horizon,
         pASCVD = rrStatinsASCVD*pASCVD;
       }
       // 10-year prob to 1-year rate
-      double ttASCVD = rEXP(1, ProbToRate(pASCVD, 10))[0];
-      
+      double ttASCVD = rEXP(1, ProbToRate(pASCVD, 10.0))[0];
+  
       // next event: BG_death or ASCVD?
       if (ttASCVD < ttBGdeath & ttASCVD < tthorizon){
         
@@ -253,8 +250,6 @@ List mod_main(int n_pop, bool strategy, int horizon,
         time += delta_time;
         event_ASCVD_vec(id) = 1;
         ttevent_ASCVD_vec(id) = time;
-        
-        
         
         // ever new state while not break, update time-to-event starting point
         ttBGdeath = ttBGdeath - delta_time;
