@@ -1,10 +1,11 @@
 ---
 title: "Common Random Number in DES simulation -- based on CVD model"
-author: "Astrid Yu"
+author: "RIPS CVD modeling team"
 date: "`r Sys.Date()`"
 output:
   html_document:
-    code_folding: "hide"
+    code_folding: hide
+  pdf_document: default
 ---
 
 # Preparation
@@ -192,7 +193,7 @@ MCQ160d - Ever told you had angina/angina pectoris\
 MCQ160e - Ever told you had heart attack\
 MCQ160f - Ever told you had a stroke
 
-```{r nhanes-clearance, eval=FALSE}
+```{r nhanes-clearance}
 # source("building_nhanes_sample.R")
 load("basepop.RData")
 ```
@@ -216,7 +217,7 @@ load("life table/MarkovCVD_gompertz.RData")
 
 ## Landscape
 
-```{r}
+```{r, eval=FALSE}
 # 2018 guidelines high risk -- must use statins
 subset(nhanes_sample, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
 
@@ -238,14 +239,22 @@ mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.07
 ## Detailed camparison plots
 
 ```{r}
+nhanes_sample = nhanes_sample %>% filter(LBDLDL < 190 & diabetes_rollup != 1)
+
 # Total
 nhanes_sample %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_density() +
-  facet_grid(PCE_type ~ .) + 
-  labs(title = "Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.2, linetype="dotted", 
+             color = "black") +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  #facet_grid(PCE_type ~ .) + 
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 ## PRS won't change the decision
@@ -254,10 +263,15 @@ nhanes_sample %>%
   filter(LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_density() +
-  facet_grid(PCE_type ~ .) + 
-  labs(title = "Distribution of High 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.2, linetype="dotted", 
+             color = "black") +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  #facet_grid(PCE_type ~ .) + 
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "High Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 # Low Risk, < 5%
@@ -265,10 +279,15 @@ nhanes_sample %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  geom_histogram(aes(y = ..density..), bins = 30) +
-  geom_density() +
-  facet_grid(PCE_type ~ .) + 
-  labs(title = "Distribution of Low 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.2, linetype="dotted", 
+             color = "black") +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  #facet_grid(PCE_type ~ .) + 
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Low Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 # PRS may change the decision
@@ -277,10 +296,15 @@ nhanes_sample %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  geom_histogram(aes(y = ..density..), bins = 30) +
-  geom_density() +
-  facet_grid(PCE_type ~ .) + 
-  labs(title = "Distribution of Borderline 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.2, linetype="dotted", 
+             color = "black") +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  #facet_grid(PCE_type ~ .) + 
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Borderline Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 ## Intermediate Risk
@@ -288,10 +312,15 @@ nhanes_sample %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  geom_histogram(aes(y = ..density..), bins = 30) +
-  geom_density() +
-  facet_grid(PCE_type ~ .) + 
-  labs(title = "Distribution of Intermediate 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.2, linetype="dotted", 
+             color = "black") +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  #facet_grid(PCE_type ~ .) + 
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Intermediate Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 ```
@@ -327,7 +356,7 @@ possible branches:
 4.  get CVD, die after first-year ASCVD event\
 
 ```{r}
-runcohort = nhanes_sample[1:vN, ]
+runcohort = nhanes_sample
 sim_ASCVD = function(strategy) {
   bind_cols(mod_main(n_pop = nrow(runcohort), strategy = strategy, 
                     horizon = vHorizon,
@@ -364,30 +393,35 @@ sim_ASCVD = function(strategy) {
               cAnnualFU = cAnnualFU, cFatalASCVD = cFatalASCVD, 
               cNonFatalASCVD = cNonFatalASCVD, 
               cMildAdverse = cMildAdverse, cMajorAdverse = cMajorAdverse))}
-w
-results1 = sim_ASCVD(1)
-# validation
-subset(results1, mild_adverse != 0 | major_adverse != 0)
-
-# horizon
-subset(results1, death == 0)
-subset(results1, death == 0 & ttdeath != 10)
-
-# BG death
-subset(results1, BGdeath == 1)
-
-# Fatal ASCVD
-subset(results1, fatal_ASCVD == 1)
-subset(results1, fatal_ASCVD == 1 & ASCVDdeath != 1)
-
-# nonfatal ASCVD
-subset(results1, fatal_ASCVD == 0 & ASCVDdeath == 1)
 
 results1 = sim_ASCVD(1)
-results0 = sim_ASCVD(0)
-rbind(colMeans(results1), colMeans(results0))
+# # validation
+# subset(results1, mild_adverse != 0 | major_adverse != 0)
+# 
+# # horizon
+# subset(results1, death == 0)
+# subset(results1, death == 0 & ttdeath != 10)
+# 
+# # BG death
+# subset(results1, BGdeath == 1)
+# 
+# # Fatal ASCVD
+# subset(results1, fatal_ASCVD == 1)
+# subset(results1, fatal_ASCVD == 1 & ASCVDdeath != 1)
+# 
+# # nonfatal ASCVD
+# subset(results1, fatal_ASCVD == 0 & ASCVDdeath == 1)
 
 results1 = sim_ASCVD(1)
 results0 = sim_ASCVD(0)
-rbind(colMeans(results1), colMeans(results0))
+rbind(colMeans(results1), colMeans(results0)) %>%
+  kableExtra::kbl() %>%
+  kableExtra::kable_styling()
+
+results1 = sim_ASCVD(1)
+results0 = sim_ASCVD(0)
+rbind(colMeans(results1), colMeans(results0)) %>% 
+  kableExtra::kbl() %>%
+  kableExtra::kable_styling()
+
 ```

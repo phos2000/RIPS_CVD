@@ -168,25 +168,15 @@ List mod_main(int n_pop, bool strategy, int horizon,
         if (R::unif_rand() < pMajorAdverseBeingFatal){
           //Fatal adverse event
           delta_time = 0;
-          
           state = 'D'; // ever change state, calculate all the cost and utility.
-          //LE
-          LE_vec(id) += delta_time;
-          LE_disc_vec(id) += discount(disc_rate, time, delta_time);
           //one-time cost
           cost_vec(id) += cMajorAdverse;
           cost_disc_vec(id) += cMajorAdverse / pow(1.0 + disc_rate, time);
-          //Utility
-          QALE_vec(id) += uDeath * delta_time;
-          QALE_disc_vec(id) += uDeath * discount(disc_rate, time, delta_time);
           
           //age, time, event records
-          age_mod += delta_time;
-          time += delta_time;
           major_adverse_fatal_vec(id) = 1;
           event_death_vec(id) = 1;
           ttevent_death_vec(id) = time;
-          
         } else {
           uStatins = uHealthyStatin - uPenaltyMajorAdverse;
           //one-time cost
@@ -212,13 +202,11 @@ List mod_main(int n_pop, bool strategy, int horizon,
     // Healthy State, including statin treatment
     if (state == 'H'){
       // time to ASCVD
-      // consider PRS_revised PCE to be the true ASCVD risk. 
-      if(statins){
-        //relative risk
-        pASCVD = rrStatinsASCVD*pASCVD;
-      }
-      // 10-year prob to 1-year rate
+      // consider PRS_revised PCE to be the true ASCVD risk.
       double ttASCVD = Rcpp::rexp(1, ProbToRate(pASCVD, 10.0))[0];
+      if(statins){
+        ttASCVD = Rcpp::rexp(1, rrStatinsASCVD*ProbToRate(pASCVD, 10.0))[0];
+      }
   
       // next event: BG_death or ASCVD?
       if (ttASCVD < ttBGdeath & ttASCVD < tthorizon){
@@ -334,7 +322,6 @@ List mod_main(int n_pop, bool strategy, int horizon,
     // ASCVD State
     // possible events: BG death, death in a year
     if (state == 'S'){
-      
       // prob of fatal ASCVD event
       double pFatalASCVD;
       
