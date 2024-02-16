@@ -39,11 +39,11 @@ NumericVector rgompertz(int n, double shape, double rate){
   return f(n, shape, rate);
 }
 
-NumericVector rEXP(int n, double rate){
-  // calling rexp()
-  Function f("rexp"); 
-  return f(n, rate);
-}
+// NumericVector rEXP(int n, double rate){
+//   // calling rexp()
+//   Function f("rexp"); 
+//   return f(n, rate);
+// }
 
 NumericVector cHealthyAve(double age_mod, double delta_time){
   Function f("cHealthyAve");
@@ -109,6 +109,7 @@ List mod_main(int n_pop, bool strategy, int horizon,
               double cAnnualStatin, double cAnnualFU, double cFatalASCVD, 
               double cNonFatalASCVD, double cMildAdverse, double cMajorAdverse){
   //output
+  NumericVector statins_vec(n_pop);
   NumericVector LE_vec(n_pop);
   NumericVector LE_disc_vec(n_pop);
   NumericVector QALE_vec(n_pop);
@@ -156,6 +157,8 @@ List mod_main(int n_pop, bool strategy, int horizon,
     } else if (strategy){
       if (pce_prs >= 0.075){statins = 1;}
     } else if (pce_orig >= 0.075){statins = 1;}
+    
+    statins_vec(id) = statins;
     
     //Statins adverse event
     if (statins) {
@@ -215,7 +218,7 @@ List mod_main(int n_pop, bool strategy, int horizon,
         pASCVD = rrStatinsASCVD*pASCVD;
       }
       // 10-year prob to 1-year rate
-      double ttASCVD = rEXP(1, ProbToRate(pASCVD, 10.0))[0];
+      double ttASCVD = Rcpp::rexp(1, ProbToRate(pASCVD, 10.0))[0];
   
       // next event: BG_death or ASCVD?
       if (ttASCVD < ttBGdeath & ttASCVD < tthorizon){
@@ -428,6 +431,7 @@ List mod_main(int n_pop, bool strategy, int horizon,
   }
   
   return(List::create(
+      Named("statins")   = statins_vec,
       Named("LE")        = LE_vec,
       Named("LE_disc")   = LE_disc_vec,
       Named("QALE")      = QALE_vec,

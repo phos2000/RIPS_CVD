@@ -327,17 +327,18 @@ possible branches:
 4.  get CVD, die after first-year ASCVD event\
 
 ```{r}
+runcohort = nhanes_sample[1:vN, ]
 sim_ASCVD = function(strategy) {
-  bind_cols(mod_main(n_pop = nrow(nhanes_sample), strategy = strategy, 
+  bind_cols(mod_main(n_pop = nrow(runcohort), strategy = strategy, 
                     horizon = vHorizon,
               disc_rate = annual_discount_rate,
-              age_vec = nhanes_sample$RIDAGEYR, 
-              male_vec = nhanes_sample$male, 
-              race_vec = nhanes_sample$race,
-              diabetes_vec = nhanes_sample$diabetes_rollup, 
-              ldl_chol_vec = nhanes_sample$LBDLDL,
-              pce_orig_vec = nhanes_sample$pce_orig, 
-              pce_prs_vec = nhanes_sample$pce_prs,
+              age_vec = runcohort$RIDAGEYR, 
+              male_vec = runcohort$male, 
+              race_vec = runcohort$race,
+              diabetes_vec = runcohort$diabetes_rollup, 
+              ldl_chol_vec = runcohort$LBDLDL,
+              pce_orig_vec = runcohort$pce_orig, 
+              pce_prs_vec = runcohort$pce_prs,
               rrStatinsASCVD = rrStatinsASCVD,
               pFatalASCVD_m_young = pFatalASCVD_m_old, 
               pFatalASCVD_m_old = pFatalASCVD_m_old,
@@ -363,7 +364,7 @@ sim_ASCVD = function(strategy) {
               cAnnualFU = cAnnualFU, cFatalASCVD = cFatalASCVD, 
               cNonFatalASCVD = cNonFatalASCVD, 
               cMildAdverse = cMildAdverse, cMajorAdverse = cMajorAdverse))}
-
+w
 results1 = sim_ASCVD(1)
 # validation
 subset(results1, mild_adverse != 0 | major_adverse != 0)
@@ -389,5 +390,4 @@ rbind(colMeans(results1), colMeans(results0))
 results1 = sim_ASCVD(1)
 results0 = sim_ASCVD(0)
 rbind(colMeans(results1), colMeans(results0))
-
 ```
