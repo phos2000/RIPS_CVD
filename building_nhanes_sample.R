@@ -130,7 +130,7 @@
                    prs_z = 0)[[1]]/100})
   
 #convert race back to a 1/0 variable
-  nhanes_raw_data$race <- ifelse(nhanes_sample$race == 1, 0, 1) 
+  nhanes_raw_data$race <- ifelse(nhanes_raw_data$race == 1, 0, 1) 
 
 
 # Sample Subgroups --------------------------------------------------------
@@ -167,15 +167,25 @@
     return(sample)
   }
   
-  nhanes_sample_lower_5_change = sub_dat(PCE_lower = 0, PCE_upper = 0.05)
-  nhanes_sample_lower_5_unchange = sub_dat(PCE_lower = 0, PCE_upper = 0.05, statin_use_change = 0)
-  nhanes_sample_5_7.5_change = sub_dat(PCE_lower = 0.05, PCE_upper = 0.075)
-  nhanes_sample_5_7.5_unchange = sub_dat(PCE_lower = 0.05, PCE_upper = 0.075, statin_use_change = 0)
-  nhanes_sample_7.5_20_change = sub_dat(PCE_lower = 0.075, PCE_upper = 0.20)
-  nhanes_sample_7.5_20_unchange = sub_dat(PCE_lower = 0.075, PCE_upper = 0.20, statin_use_change = 0)
-  nhanes_sample_greater_20_change = sub_dat(PCE_lower = 0.20, PCE_upper = 1)
-  nhanes_sample_greater_20_unchange = sub_dat(PCE_lower = 0.20, PCE_upper = 1, statin_use_change = 0)
+  n_per_group = 1000000
+  nhanes_sample_lower_5_change = sub_dat(n_pop = n_per_group, PCE_lower = 0, PCE_upper = 0.05)
+  nhanes_sample_lower_5_unchange = sub_dat(n_pop = n_per_group, PCE_lower = 0, PCE_upper = 0.05, statin_use_change = 0)
+  nhanes_sample_5_7.5_change = sub_dat(n_pop = n_per_group, PCE_lower = 0.05, PCE_upper = 0.075)
+  nhanes_sample_5_7.5_unchange = sub_dat(n_pop = n_per_group, PCE_lower = 0.05, PCE_upper = 0.075, statin_use_change = 0)
+  nhanes_sample_7.5_20_change = sub_dat(n_pop = n_per_group, PCE_lower = 0.075, PCE_upper = 0.20)
+  nhanes_sample_7.5_20_unchange = sub_dat(n_pop = n_per_group, PCE_lower = 0.075, PCE_upper = 0.20, statin_use_change = 0)
+  nhanes_sample_greater_20_change = sub_dat(n_pop = n_per_group, PCE_lower = 0.20, PCE_upper = 1)
+  nhanes_sample_greater_20_unchange = sub_dat(n_pop = n_per_group, PCE_lower = 0.20, PCE_upper = 1, statin_use_change = 0)
   
 # Save baseline pop
-  save(nhanes_raw_data, nhanes_sample_lower_5_change, nhanes_sample_lower_5_unchange, nhanes_sample_5_7.5_change, nhanes_sample_5_7.5_unchange, nhanes_sample_7.5_20_change, nhanes_sample_7.5_20_unchange, nhanes_sample_greater_20_change, nhanes_sample_greater_20_unchange, file = "basepop.RData")
+  save(nhanes_raw_data, 
+       nhanes_sample_lower_5_change, 
+       nhanes_sample_lower_5_unchange, 
+       nhanes_sample_5_7.5_change, 
+       nhanes_sample_5_7.5_unchange, 
+       nhanes_sample_7.5_20_change, 
+       nhanes_sample_7.5_20_unchange, 
+       nhanes_sample_greater_20_change, 
+       nhanes_sample_greater_20_unchange, 
+       file = "basepop.RData")
   
