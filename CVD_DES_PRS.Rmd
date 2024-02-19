@@ -1,5 +1,5 @@
 ---
-title: "Common Random Number in DES simulation -- based on CVD model"
+title: "PRS-revised PCE in DES model for ASCVD"
 author: "RIPS CVD modeling team"
 date: "`r Sys.Date()`"
 output:
@@ -215,34 +215,32 @@ load("life table/MarkovCVD_gompertz.RData")
 10-year ASCVD prob adding PRS risk:\
 1 - exp(log(1 - pce_orig) \* 1.73\^PRS)
 
-## Landscape
+## pano
 
 ```{r, eval=FALSE}
 # 2018 guidelines high risk -- must use statins
-subset(nhanes_sample, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
+subset(nhanes_sample_pano, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
 
 # low risk -- needn't need use statins
-subset(nhanes_sample, LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05)
+subset(nhanes_sample_pano, LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05)
 
 # borderline risk 0.05-0.075
-hist(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
-mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
-mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
-mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
+hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
+mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
+mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
+mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
 
 # Intermediate risk
-hist(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
-mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
-mean(subset(nhanes_sample,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
+hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
+mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
+mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
 ```
 
 ## Detailed camparison plots
 
 ```{r}
-nhanes_sample = nhanes_sample %>% filter(LBDLDL < 190 & diabetes_rollup != 1)
-
 # Total
-nhanes_sample %>%
+nhanes_sample_pano %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
@@ -259,7 +257,7 @@ nhanes_sample %>%
 
 ## PRS won't change the decision
 # High Risk, must use statins 
-nhanes_sample %>%
+nhanes_sample_pano %>%
   filter(LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
@@ -275,7 +273,7 @@ nhanes_sample %>%
   theme_bw()
 
 # Low Risk, < 5%
-nhanes_sample %>%
+nhanes_sample_pano %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
@@ -292,7 +290,7 @@ nhanes_sample %>%
 
 # PRS may change the decision
 ## Borderline Risk, 5% - 7.5%
-nhanes_sample %>%
+nhanes_sample_pano %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
@@ -308,7 +306,7 @@ nhanes_sample %>%
   theme_bw()
 
 ## Intermediate Risk
-nhanes_sample %>%
+nhanes_sample_pano %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
@@ -355,8 +353,44 @@ possible branches:
 
 4.  get CVD, die after first-year ASCVD event\
 
+## Subgroup
+
+| PCE subgroups     | PCE \< 5%       | PCE 5 - 7.5%    | PCE 7.5 - 20%   | PCE \> 20%      |
+|----------------|--------------|--------------|--------------|--------------|
+| subgroup weight   |                 |                 |                 |                 |
+| change statin use | PRS-PCE \> 7.5% | PRS-PCE \> 7.5% | PRS-PCE \< 7.5% | PRS-PCE \< 7.5% |
+| not change        |                 |                 |                 |                 |
+
 ```{r}
-runcohort = nhanes_sample
+# PCE subgroup weight
+nrow(subset(nhanes_sample_pano, pce_orig < 0.05))/nrow(nhanes_sample_pano)
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075))/nrow(nhanes_sample_pano)
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20))/nrow(nhanes_sample_pano)
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.2))/nrow(nhanes_sample_pano)
+
+# PCE + PRS subgroup weight on condition of PCE group. 
+nrow(subset(nhanes_sample_pano, pce_orig < 0.05 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig < 0.05))
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075))
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20 & pce_prs < 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20))
+nrow(subset(nhanes_sample_pano, pce_orig >= 0.2 & pce_prs < 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.2))
+
+nhanes_wt = data.frame(
+  PCE_group = c(
+    nrow(subset(nhanes_sample_pano, pce_orig < 0.05))/nrow(nhanes_sample_pano),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075))/nrow(nhanes_sample_pano),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20))/nrow(nhanes_sample_pano),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.2))/nrow(nhanes_sample_pano)),
+  # on condition of PCE_group
+  PRS_change = c(
+    nrow(subset(nhanes_sample_pano, pce_orig < 0.05 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig < 0.05)),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075)),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20 & pce_prs < 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20)),
+    nrow(subset(nhanes_sample_pano, pce_orig >= 0.2 & pce_prs < 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.2))))
+
+
+```
+
+```{r}
 sim_ASCVD = function(strategy) {
   bind_cols(mod_main(n_pop = nrow(runcohort), strategy = strategy, 
                     horizon = vHorizon,
@@ -393,8 +427,51 @@ sim_ASCVD = function(strategy) {
               cAnnualFU = cAnnualFU, cFatalASCVD = cFatalASCVD, 
               cNonFatalASCVD = cNonFatalASCVD, 
               cMildAdverse = cMildAdverse, cMajorAdverse = cMajorAdverse))}
+```
 
-results1 = sim_ASCVD(1)
+```{r}
+# PCE orig <5%
+runcohort = nhanes_sample_lower_5_change
+results_lower_5_change.1 = sim_ASCVD(1)
+results_lower_5_change.0 = sim_ASCVD(0)
+
+runcohort = nhanes_sample_lower_5_unchange
+results_lower_5_unchange.0 = sim_ASCVD(0)
+
+# PCE orig 5-7.5%
+runcohort = nhanes_sample_5_7.5_change
+results_5_7.5_change.1 = sim_ASCVD(1)
+results_5_7.5_change.0 = sim_ASCVD(0)
+
+runcohort = nhanes_sample_5_7.5_unchange
+results_5_7.5_unchange.0 = sim_ASCVD(0)
+
+# PCE orig 7.5-20%
+runcohort = nhanes_sample_7.5_20_change
+results_7.5_20_change.1 = sim_ASCVD(1)
+results_7.5_20_change.0 = sim_ASCVD(0)
+
+runcohort = nhanes_sample_7.5_20_unchange
+results_7.5_20_unchange.0 = sim_ASCVD(0)
+
+# PCE orig >20%
+runcohort = nhanes_sample_greater_20_change
+results_greater_20_change.1 = sim_ASCVD(1)
+results_greater_20_change.0 = sim_ASCVD(0)
+
+runcohort = nhanes_sample_greater_20_unchange
+results_greater_20_unchange.0 = sim_ASCVD(0)
+
+# incremental
+
+colMeans(results_5_7.5_change.1) - colMeans(results_5_7.5_change.0)
+
+
+# weight combination
+
+
+
+
 # # validation
 # subset(results1, mild_adverse != 0 | major_adverse != 0)
 # 
@@ -412,16 +489,16 @@ results1 = sim_ASCVD(1)
 # # nonfatal ASCVD
 # subset(results1, fatal_ASCVD == 0 & ASCVDdeath == 1)
 
-results1 = sim_ASCVD(1)
-results0 = sim_ASCVD(0)
-rbind(colMeans(results1), colMeans(results0)) %>%
-  kableExtra::kbl() %>%
-  kableExtra::kable_styling()
-
-results1 = sim_ASCVD(1)
-results0 = sim_ASCVD(0)
-rbind(colMeans(results1), colMeans(results0)) %>% 
-  kableExtra::kbl() %>%
-  kableExtra::kable_styling()
+# results1 = sim_ASCVD(1)
+# results0 = sim_ASCVD(0)
+# rbind(colMeans(results1), colMeans(results0)) %>%
+#   kableExtra::kbl() %>%
+#   kableExtra::kable_styling()
+# 
+# results1 = sim_ASCVD(1)
+# results0 = sim_ASCVD(0)
+# rbind(colMeans(results1), colMeans(results0)) %>% 
+#   kableExtra::kbl() %>%
+#   kableExtra::kable_styling()
 
 ```

@@ -134,7 +134,15 @@
 
 
 # Sample Subgroups --------------------------------------------------------
-
+  
+  # to get the weights
+  tmp = subset(nhanes_raw_data, LBDLDL < 190 & diabetes_rollup != 1 & !is.na(WTMEC2YR))
+  nhanes_sample_pano = sample_n(tmp, size = 1000000, replace = TRUE, weight = WTMEC2YR)
+  nhanes_sample_pano$PRS = rnorm(nrow(nhanes_sample_pano), 0, 1)
+  nhanes_sample_pano$pce_prs = 1 - exp(log(1 - nhanes_sample_pano$pce_orig) * 1.73^nhanes_sample_pano$PRS)
+  
+  
+  # function for subgroup
   sub_dat = function(raw_data = nhanes_raw_data, n_pop = 1000000, PCE_lower = 0, PCE_upper = 1, statin_use_change = 1, diabetes_chol_exclude = 1, statin_use_threshold = 0.075){
     # target group not include people who don't need PCE score.
     if (diabetes_chol_exclude == 1){raw_data = subset(raw_data, LBDLDL < 190 & diabetes_rollup != 1)}
@@ -179,6 +187,7 @@
   
 # Save baseline pop
   save(nhanes_raw_data, 
+       nhanes_sample_pano,
        nhanes_sample_lower_5_change, 
        nhanes_sample_lower_5_unchange, 
        nhanes_sample_5_7.5_change, 
