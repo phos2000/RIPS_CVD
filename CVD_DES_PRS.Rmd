@@ -464,13 +464,29 @@ results_greater_20_unchange.0 = sim_ASCVD(0)
 
 # incremental
 
-colMeans(results_5_7.5_change.1) - colMeans(results_5_7.5_change.0)
+inc1 = colMeans(results_lower_5_change.1) - colMeans(results_lower_5_change.0)
+inc2 = colMeans(results_5_7.5_change.1) - colMeans(results_5_7.5_change.0)
+inc3 = colMeans(results_7.5_20_change.1) - colMeans(results_7.5_20_change.0)
+inc4 = colMeans(results_greater_20_change.1) - colMeans(results_greater_20_change.0)
 
+inc_cost_disc = c(inc1$cost_disc, inc2$cost_disc, inc3$cost_disc, inc4$cost_disc) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
+inc_QALE_disc = c(inc1$QALE_disc, inc2$QALE_disc, inc3$QALE_disc, inc4$QALE_disc) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
+sum(inc_cost_disc)/sum(inc_QALE_disc)
 
 # weight combination
+# add PRS: strategy == 1
+wt_results1 = colSums(
+  rbind(
+    rbind(colMeans(results_lower_5_change.1), colMeans(results_5_7.5_change.1), colMeans(results_7.5_20_change.1), colMeans(results_greater_20_change.1)) * nhanes_wt$PRS_change * nhanes_wt$PCE_group,
+    rbind(colMeans(results_lower_5_unchange.0), colMeans(results_5_7.5_unchange.0), colMeans(results_7.5_20_unchange.0), colMeans(results_greater_20_unchange.0)) * (1-nhanes_wt$PRS_change) * nhanes_wt$PCE_group
+    ))
 
-
-
+# status quo: strategy == 0
+wt_results0 = colSums(
+  rbind(
+    rbind(colMeans(results_lower_5_change.0), colMeans(results_5_7.5_change.0), colMeans(results_7.5_20_change.0), colMeans(results_greater_20_change.0)) * nhanes_wt$PRS_change * nhanes_wt$PCE_group,
+    rbind(colMeans(results_lower_5_unchange.0), colMeans(results_5_7.5_unchange.0), colMeans(results_7.5_20_unchange.0), colMeans(results_greater_20_unchange.0)) * (1-nhanes_wt$PRS_change) * nhanes_wt$PCE_group
+    ))
 
 # # validation
 # subset(results1, mild_adverse != 0 | major_adverse != 0)
