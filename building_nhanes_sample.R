@@ -114,7 +114,7 @@
   # check sample size now
   nrow(nhanes_raw_data)
   
-# Pooled Cohort Equation and Sample --------------------------------------------------
+# Pooled Cohort Equation --------------------------------------------------
   
   source('pcr.R')
   
@@ -128,16 +128,54 @@
                    smoker = (nhanes_raw_data$SMQ040[r] == 1),
                    diabetic = (nhanes_raw_data$diabetes_rollup[r] == 1),
                    prs_z = 0)[[1]]/100})
-
-## Sample with replacement
-  nhanes_sample = sample_n(nhanes_raw_data[!is.na(nhanes_raw_data$WTMEC2YR),], size = 1000000, replace = TRUE, weight = na.omit(nhanes_raw_data$WTMEC2YR))
   
-  nhanes_sample$PRS = rnorm(nrow(nhanes_sample), 0, 1)
-  nhanes_sample$pce_prs = 1 - exp(log(1 - nhanes_sample$pce_orig) * 1.73^nhanes_sample$PRS)
-
 #convert race back to a 1/0 variable
-  nhanes_sample$race <- ifelse(nhanes_sample$race == 1, 0, 1)
+  nhanes_raw_data$race <- ifelse(nhanes_sample$race == 1, 0, 1) 
 
+
+# Sample Subgroups --------------------------------------------------------
+
+  sub_dat = function(raw_data = nhanes_raw_data, n_pop = 1000000, PCE_lower = 0, PCE_upper = 1, statin_use_change = 1, diabetes_chol_exclude = 1, statin_use_threshold = 0.075){
+    # target group not include people who don't need PCE score.
+    if (diabetes_chol_exclude == 1){raw_data = subset(raw_data, LBDLDL < 190 & diabetes_rollup != 1)}
+    
+    # subgroups by PCE
+    raw_data = subset(raw_data, !is.na(WTMEC2YR) & pce_orig >= PCE_lower & pce_orig < PCE_upper)
+    
+    # define statin_use_change
+    statement <- "((tmp$pce_prs < statin_use_threshold & tmp$pce_orig >= statin_use_threshold) | (tmp$pce_prs >= statin_use_threshold & tmp$pce_orig < statin_use_threshold))"
+    
+    # Sample with replacement
+    n_sub = 0
+    sample = data.frame()
+    while(n_sub < n_pop){
+      # create a new subset
+      tmp = sample_n(raw_data, size = n_pop, replace = TRUE, weight = WTMEC2YR)
+      tmp$PRS = rnorm(nrow(tmp), 0, 1)
+      tmp$pce_prs = 1 - exp(log(1 - tmp$pce_orig) * 1.73^tmp$PRS)
+      
+      if (statin_use_change == 1){tmp = subset(tmp, eval(parse(text = statement)))
+      } else {tmp = subset(tmp, eval(parse(text = paste0("!", statement))))}
+      
+      # extend the sample and recalculate the indeicator
+      sample = rbind(sample, tmp)
+      n_sub = nrow(sample)
+    }
+    
+    sample = sample_n(sample, size = n_pop, replace = FALSE)
+    
+    return(sample)
+  }
+  
+  nhanes_sample_lower_5_change = sub_dat(PCE_lower = 0, PCE_upper = 0.05)
+  nhanes_sample_lower_5_unchange = sub_dat(PCE_lower = 0, PCE_upper = 0.05, statin_use_change = 0)
+  nhanes_sample_5_7.5_change = sub_dat(PCE_lower = 0.05, PCE_upper = 0.075)
+  nhanes_sample_5_7.5_unchange = sub_dat(PCE_lower = 0.05, PCE_upper = 0.075, statin_use_change = 0)
+  nhanes_sample_7.5_20_change = sub_dat(PCE_lower = 0.075, PCE_upper = 0.20)
+  nhanes_sample_7.5_20_unchange = sub_dat(PCE_lower = 0.075, PCE_upper = 0.20, statin_use_change = 0)
+  nhanes_sample_greater_20_change = sub_dat(PCE_lower = 0.20, PCE_upper = 1)
+  nhanes_sample_greater_20_unchange = sub_dat(PCE_lower = 0.20, PCE_upper = 1, statin_use_change = 0)
+  
 # Save baseline pop
-  save(nhanes_raw_data, nhanes_sample, file = "basepop.RData")
+  save(nhanes_raw_data, nhanes_sample_lower_5_change, nhanes_sample_lower_5_unchange, nhanes_sample_5_7.5_change, nhanes_sample_5_7.5_unchange, nhanes_sample_7.5_20_change, nhanes_sample_7.5_20_unchange, nhanes_sample_greater_20_change, nhanes_sample_greater_20_unchange, file = "basepop.RData")
   
