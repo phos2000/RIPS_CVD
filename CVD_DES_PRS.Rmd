@@ -12,7 +12,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel", "Rcpp")
+load.lib<-c("reshape2","tidyverse","ggrepel","dampack","kableExtra","flexsurv","readxl","haven","janitor","here","parallel", "Rcpp", "ggpubr")
 install.lib<-load.lib[!load.lib %in% installed.packages()]
 for(lib in install.lib) install.packages(lib,dependencies=TRUE)
 sapply(load.lib,require,character=TRUE)
@@ -239,87 +239,119 @@ mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >=
 ## Detailed camparison plots
 
 ```{r}
+hex_colors = scales::hue_pal()(2)
 # Total
-nhanes_sample_pano %>%
+fig_full <- nhanes_sample_pano %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
-  
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
-  geom_vline(xintercept = 0.2, linetype="dotted", 
-             color = "black") +
+  annotate("rect", xmin = -Inf, xmax = 0.075, ymin = -Inf, ymax = Inf, fill = "black", alpha =0.1) +
+  annotate("rect", xmin = 0.075, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "yellow", alpha =0.1) +
+  annotate("text", x = 0.075, y = Inf, label = "Statins", hjust = -0.4, vjust = 1.5, size = 3) +
+  annotate("text", x = 0.075, y = Inf, label = "No Statins", hjust = 1, vjust = 1.5, size = 3) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), 
+                 boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
   geom_vline(xintercept = 0.075, linetype="dotted", 
              color = "red") +
-  #facet_grid(PCE_type ~ .) + 
+  scale_fill_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_color_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(y = "Proportion", x = "10-yr ASCVD risk",
        title = "Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
   theme_bw()
 
 ## PRS won't change the decision
 # High Risk, must use statins 
-nhanes_sample_pano %>%
+fig_high <- nhanes_sample_pano %>%
   filter(LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  mutate(PCE_type = ordered(PCE_type, labels = c("PCE Only", "PCE + PRS"))) %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
-  geom_vline(xintercept = 0.2, linetype="dotted", 
-             color = "black") +
+  annotate("rect", xmin = -Inf, xmax = 0.075, ymin = -Inf, ymax = Inf, fill = "black", alpha =0.1) +
+  annotate("rect", xmin = 0.075, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "yellow", alpha =0.1) +
+  annotate("text", x = 0.075, y = Inf, label = "Statins", hjust = -0.4, vjust = 1.5, size = 3) +
+  annotate("text", x = 0.075, y = Inf, label = "No Statins", hjust = 1, vjust = 1.5, size = 3) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), 
+                 boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
   geom_vline(xintercept = 0.075, linetype="dotted", 
              color = "red") +
-  #facet_grid(PCE_type ~ .) + 
+  scale_fill_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_color_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(y = "Proportion", x = "10-yr ASCVD risk",
-       title = "High Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
-  theme_bw()
-
-# Low Risk, < 5%
-nhanes_sample_pano %>%
-  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05) %>%
-  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
-  ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
-  geom_vline(xintercept = 0.2, linetype="dotted", 
-             color = "black") +
-  geom_vline(xintercept = 0.075, linetype="dotted", 
-             color = "red") +
-  #facet_grid(PCE_type ~ .) + 
-  labs(y = "Proportion", x = "10-yr ASCVD risk",
-       title = "Low Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
-  theme_bw()
-
-# PRS may change the decision
-## Borderline Risk, 5% - 7.5%
-nhanes_sample_pano %>%
-  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
-  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
-  ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
-  geom_vline(xintercept = 0.2, linetype="dotted", 
-             color = "black") +
-  geom_vline(xintercept = 0.075, linetype="dotted", 
-             color = "red") +
-  #facet_grid(PCE_type ~ .) + 
-  labs(y = "Proportion", x = "10-yr ASCVD risk",
-       title = "Borderline Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+       title = "High Risk Group (PCE > 20%)") +
   theme_bw()
 
 ## Intermediate Risk
-nhanes_sample_pano %>%
+fig_intermediate <- nhanes_sample_pano %>%
   filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2) %>%
   pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
   ggplot(aes(x=prob_10yr, color = PCE_type)) +
-  #geom_histogram(aes(y = ..density..), binwidth = 0.02) +
-  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
-  geom_vline(xintercept = 0.2, linetype="dotted", 
-             color = "black") +
+  annotate("rect", xmin = -Inf, xmax = 0.075, ymin = -Inf, ymax = Inf, fill = "black", alpha =0.1) +
+  annotate("rect", xmin = 0.075, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "yellow", alpha =0.1) +
+  annotate("text", x = 0.075, y = Inf, label = "Statins", hjust = -0.4, vjust = 1.5, size = 3) +
+  annotate("text", x = 0.075, y = Inf, label = "No Statins", hjust = 1, vjust = 1.5, size = 3) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), 
+                 boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
   geom_vline(xintercept = 0.075, linetype="dotted", 
              color = "red") +
-  #facet_grid(PCE_type ~ .) + 
+  scale_fill_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_color_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(y = "Proportion", x = "10-yr ASCVD risk",
-       title = "Intermediate Risk Group -- Distribution of 10-yr ASCVD Risk (w/o + w/ PRS)") + 
+       title = "Intermediate Risk Group (PCE 7.5%-20%)") + 
   theme_bw()
+
+## Borderline Risk, 5% - 7.5%
+fig_borderline <- nhanes_sample_pano %>%
+  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  mutate(PCE_type = ordered(PCE_type, labels = c("PCE Only", "PCE + PRS"))) %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  annotate("rect", xmin = -Inf, xmax = 0.075, ymin = -Inf, ymax = Inf, fill = "black", alpha =0.1) +
+  annotate("rect", xmin = 0.075, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "yellow", alpha =0.1) +
+  annotate("text", x = 0.075, y = Inf, label = "Statins", hjust = -0.4, vjust = 1.5, size = 3) +
+  annotate("text", x = 0.075, y = Inf, label = "No Statins", hjust = 1, vjust = 1.5, size = 3) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), 
+                 boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  scale_fill_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_color_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Borderline Risk Group (PCE 5%-7.5%)") +
+  theme_bw()
+
+# Low Risk, < 5%
+fig_low <- nhanes_sample_pano %>%
+  filter(LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05) %>%
+  pivot_longer(cols = starts_with("pce_"), names_to = "PCE_type", names_prefix = "pce_", values_to = "prob_10yr") %>%
+  ggplot(aes(x=prob_10yr, color = PCE_type)) +
+  annotate("rect", xmin = -Inf, xmax = 0.075, ymin = -Inf, ymax = Inf, fill = "black", alpha =0.1) +
+  annotate("rect", xmin = 0.075, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "yellow", alpha =0.1) +
+  annotate("text", x = 0.075, y = Inf, label = "Statins", hjust = -0.4, vjust = 1.5, size = 3) +
+  annotate("text", x = 0.075, y = Inf, label = "No Statins", hjust = 1, vjust = 1.5, size = 3) +
+  geom_histogram(aes(y = ..count../sum(..count..), fill = PCE_type), 
+                 boundary = 0, binwidth = 0.025, alpha = 0.5, position="identity")  +
+  geom_vline(xintercept = 0.075, linetype="dotted", 
+             color = "red") +
+  scale_fill_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_color_manual(labels = c("PCE Only", "PCE + PRS"), values = hex_colors, name = "") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(y = "Proportion", x = "10-yr ASCVD risk",
+       title = "Low-Risk Group (PCE < 5%)") + 
+  theme_bw()
+
+ggsave(fig_full, filename = "fig_full.pdf", width = 8, height = 5)
+ggsave(fig_high, filename = "fig_high.pdf", width = 8, height = 5)
+ggsave(fig_intermediate, filename = "fig_intermediate.pdf", width = 8, height = 5)
+ggsave(fig_borderline, filename = "fig_borderline.pdf", width = 8, height = 5)
+ggsave(fig_low, filename = "fig_low.pdf", width = 8, height = 5)
+
+fig_comb <- ggarrange(fig_low, fig_borderline, fig_intermediate, fig_high,
+                      nrow = 2, ncol = 2,
+                      legend = "bottom", common.legend = T)
+ggsave(fig_comb, filename = "fig_comb.pdf", width = 12, height = 7)
 
 ```
 
@@ -356,7 +388,7 @@ possible branches:
 ## Subgroup
 
 | PCE subgroups     | PCE \< 5%       | PCE 5 - 7.5%    | PCE 7.5 - 20%   | PCE \> 20%      |
-|----------------|--------------|--------------|--------------|--------------|
+|---------------|---------------|---------------|---------------|---------------|
 | subgroup weight   |                 |                 |                 |                 |
 | change statin use | PRS-PCE \> 7.5% | PRS-PCE \> 7.5% | PRS-PCE \< 7.5% | PRS-PCE \< 7.5% |
 | not change        |                 |                 |                 |                 |
@@ -368,7 +400,7 @@ nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075))/nrow(nhane
 nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20))/nrow(nhanes_sample_pano)
 nrow(subset(nhanes_sample_pano, pce_orig >= 0.2))/nrow(nhanes_sample_pano)
 
-# PCE + PRS subgroup weight on condition of PCE group. 
+# PCE + PRS subgroup weight conditional on PCE group
 nrow(subset(nhanes_sample_pano, pce_orig < 0.05 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig < 0.05))
 nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075 & pce_prs >= 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.05 & pce_orig < 0.075))
 nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20 & pce_prs < 0.075))/nrow(subset(nhanes_sample_pano, pce_orig >= 0.075 & pce_orig < 0.20))
@@ -468,9 +500,12 @@ inc1 = colMeans(results_lower_5_change.1) - colMeans(results_lower_5_change.0)
 inc2 = colMeans(results_5_7.5_change.1) - colMeans(results_5_7.5_change.0)
 inc3 = colMeans(results_7.5_20_change.1) - colMeans(results_7.5_20_change.0)
 inc4 = colMeans(results_greater_20_change.1) - colMeans(results_greater_20_change.0)
+results_subgroup <- bind_rows(inc1, inc2, inc3, inc4)
+write.csv(results_subgroup, file = "results_subgroup.csv")
 
-inc_cost_disc = c(inc1$cost_disc, inc2$cost_disc, inc3$cost_disc, inc4$cost_disc) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
-inc_QALE_disc = c(inc1$QALE_disc, inc2$QALE_disc, inc3$QALE_disc, inc4$QALE_disc) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
+inc_cost_disc = c(inc1["cost_disc"], inc2["cost_disc"], inc3["cost_disc"], inc4["cost_disc"]) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
+inc_QALE_disc = c(inc1["QALE_disc"], inc2["QALE_disc"], inc3["QALE_disc"], inc4["QALE_disc"]) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
+inc_cost_disc/inc_QALE_disc
 sum(inc_cost_disc)/sum(inc_QALE_disc)
 
 # weight combination
@@ -487,6 +522,9 @@ wt_results0 = colSums(
     rbind(colMeans(results_lower_5_change.0), colMeans(results_5_7.5_change.0), colMeans(results_7.5_20_change.0), colMeans(results_greater_20_change.0)) * nhanes_wt$PRS_change * nhanes_wt$PCE_group,
     rbind(colMeans(results_lower_5_unchange.0), colMeans(results_5_7.5_unchange.0), colMeans(results_7.5_20_unchange.0), colMeans(results_greater_20_unchange.0)) * (1-nhanes_wt$PRS_change) * nhanes_wt$PCE_group
     ))
+
+results_full <- bind_rows(wt_results0, wt_results1)
+write.csv(results_full, file = "results_full.csv")
 
 # # validation
 # subset(results1, mild_adverse != 0 | major_adverse != 0)
