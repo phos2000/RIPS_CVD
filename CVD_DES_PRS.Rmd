@@ -365,8 +365,10 @@ nhanes_sample_pano$PCE_group = cut(nhanes_sample_pano$pce_orig,
 
 nhanes_sample_pano %>%
   ggplot(aes(x = pnorm(PRS), y = pce_prs)) +
-  geom_point() +
-  facet_grid(. ~ PCE_group)
+  # geom_point() +
+  geom_smooth(se = TRUE) +
+  facet_grid(. ~ PCE_group) +
+  theme_bw()
 
 
 ```
