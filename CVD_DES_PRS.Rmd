@@ -355,6 +355,22 @@ ggsave(fig_comb, filename = "fig_comb.pdf", width = 12, height = 7)
 
 ```
 
+## PRS Percentile
+
+```{r}
+nhanes_sample_pano$PCE_group = cut(nhanes_sample_pano$pce_orig, 
+                               breaks = c(0, 0.05, 0.075, 0.2, 1), 
+                               include.lowest = TRUE, 
+                               labels = c("low risk (< 5%) ","Borderline Risk (5 ~ 7.5%)", "Intermediate Risk (7.5 ~ 20%)", "High Risk (> 20%)"))
+
+nhanes_sample_pano %>%
+  ggplot(aes(x = pnorm(PRS), y = pce_prs)) +
+  geom_point() +
+  facet_grid(. ~ PCE_group)
+
+
+```
+
 # Intervention
 
 strategy 0. use statins as 2018 ACC/AHA
