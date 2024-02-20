@@ -218,22 +218,22 @@ load("life table/MarkovCVD_gompertz.RData")
 ## pano
 
 ```{r, eval=FALSE}
-# 2018 guidelines high risk -- must use statins
-subset(nhanes_sample_pano, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
-
-# low risk -- needn't need use statins
-subset(nhanes_sample_pano, LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05)
-
-# borderline risk 0.05-0.075
-hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
-mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
-mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
-mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
-
-# Intermediate risk
-hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
-mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
-mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
+# # 2018 guidelines high risk -- must use statins
+# subset(nhanes_sample_pano, LBDLDL >= 190 | diabetes_rollup == 1 | pce_orig >= 0.2)
+# 
+# # low risk -- needn't need use statins
+# subset(nhanes_sample_pano, LBDLDL < 190 & diabetes_rollup != 1 & pce_orig < 0.05)
+# 
+# # borderline risk 0.05-0.075
+# hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs)
+# mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.075)
+# mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs < 0.05)
+# mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.05 & pce_orig < 0.075)$pce_prs > 0.2)
+# 
+# # Intermediate risk
+# hist(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs)
+# mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs > 0.2)
+# mean(subset(nhanes_sample_pano,LBDLDL < 190 & diabetes_rollup != 1 & pce_orig >= 0.075 & pce_orig < 0.2)$pce_prs < 0.05)
 ```
 
 ## Detailed camparison plots
@@ -494,6 +494,8 @@ results_greater_20_change.0 = sim_ASCVD(0)
 runcohort = nhanes_sample_greater_20_unchange
 results_greater_20_unchange.0 = sim_ASCVD(0)
 
+save(list=ls(pattern = 'results_'), file = "results_20240219_v2.RData")
+
 # incremental
 
 inc1 = colMeans(results_lower_5_change.1) - colMeans(results_lower_5_change.0)
@@ -501,7 +503,7 @@ inc2 = colMeans(results_5_7.5_change.1) - colMeans(results_5_7.5_change.0)
 inc3 = colMeans(results_7.5_20_change.1) - colMeans(results_7.5_20_change.0)
 inc4 = colMeans(results_greater_20_change.1) - colMeans(results_greater_20_change.0)
 results_subgroup <- bind_rows(inc1, inc2, inc3, inc4)
-write.csv(results_subgroup, file = "results_subgroup.csv")
+write.csv(results_subgroup, file = "results_subgroup_v2.csv")
 
 inc_cost_disc = c(inc1["cost_disc"], inc2["cost_disc"], inc3["cost_disc"], inc4["cost_disc"]) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
 inc_QALE_disc = c(inc1["QALE_disc"], inc2["QALE_disc"], inc3["QALE_disc"], inc4["QALE_disc"]) * nhanes_wt$PRS_change * nhanes_wt$PCE_group
@@ -524,7 +526,7 @@ wt_results0 = colSums(
     ))
 
 results_full <- bind_rows(wt_results0, wt_results1)
-write.csv(results_full, file = "results_full.csv")
+write.csv(results_full, file = "results_full_v2.csv")
 
 # # validation
 # subset(results1, mild_adverse != 0 | major_adverse != 0)
